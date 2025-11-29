@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>
 #include <functional>
+#include <string>
 
 namespace Engine
 {
