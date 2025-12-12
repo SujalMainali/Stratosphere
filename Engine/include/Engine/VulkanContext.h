@@ -1,6 +1,5 @@
 #pragma once
-#include "Engine/QueueFamilyStruct.h"
-#include "Engine/RendererMinimal.h"
+#include "Structs/QueueFamilyStruct.h"
 #include <vulkan/vulkan.h>
 #include <optional>
 #include <vector>
@@ -51,7 +50,6 @@ namespace Engine
         VkQueue m_PresentQueue = VK_NULL_HANDLE;
 
         std::unique_ptr<SwapChain> m_SwapChain;
-        std::unique_ptr<RendererMinimal> m_Renderer;
     };
 
 } // namespace Engine

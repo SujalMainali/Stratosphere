@@ -1,11 +1,10 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include <vector>
-#include "Engine/QueueFamilyStruct.h"
+#include "Structs/QueueFamilyStruct.h"
 
 namespace Engine
 {
-
     class SwapChain
     {
     public:

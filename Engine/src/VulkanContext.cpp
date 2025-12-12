@@ -39,14 +39,6 @@ namespace Engine
             m_SelectedDeviceInfo.queueFamilyIndices,
             VkExtent2D{m_Window.GetWidth(), m_Window.GetHeight()});
         m_SwapChain->Init();
-        m_Renderer = std::make_unique<RendererMinimal>(
-            m_Device,
-            m_SelectedDeviceInfo.physicalDevice,
-            m_Surface,
-            m_SwapChain.get(),
-            m_SelectedDeviceInfo.queueFamilyIndices,
-            m_SwapChain->GetExtent());
-        m_Renderer->init();
     }
 
     void VulkanContext::Shutdown()
@@ -272,28 +264,5 @@ namespace Engine
         vkGetDeviceQueue(m_Device, indices.presentFamily.value(), 0, &m_PresentQueue);
 
         std::cout << "Graphics queue and Present queue retrieved\n";
-    }
-
-    void VulkanContext::DrawFrame()
-    {
-        if (!m_Renderer)
-            return;
-
-        // If your window can be minimized to extent {0,0}, skip drawing until non-zero:
-        VkExtent2D extent = m_SwapChain->GetExtent();
-        if (extent.width == 0 || extent.height == 0)
-        {
-            // window minimized or not visible; skip draw
-            return;
-        }
-
-        // Call renderer to submit a frame. RendererMinimal::drawFrame will call vkAcquireNextImageKHR, submit and present.
-        VkResult result = m_Renderer->drawFrame(m_GraphicsQueue, m_PresentQueue);
-
-        if (result != VK_SUCCESS)
-        {
-            // Handle other VK errors appropriately — for now print or throw
-            throw std::runtime_error("failed to draw frame (unknown error)");
-        }
     }
 }
