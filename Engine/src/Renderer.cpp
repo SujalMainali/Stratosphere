@@ -222,7 +222,7 @@ namespace Engine
             VkCommandPoolCreateInfo poolInfo{};
             poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
             poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-            poolInfo.queueFamilyIndex = m_ctx->GetGraphicsQueueFamilyIndex(); // adjust if different in your context
+            poolInfo.queueFamilyIndex = m_ctx->GetGraphicsQueueFamilyIndex();
 
             if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &f.commandPool) != VK_SUCCESS)
             {
@@ -250,8 +250,13 @@ namespace Engine
         FrameContext &frame = m_frames[m_currentFrame];
 
         // Wait for previous frame to finish
-        vkWaitForFences(m_device, 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
-        vkResetFences(m_device, 1, &frame.inFlightFence);
+        VkResult r = vkWaitForFences(m_device, 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
+        if (r != VK_SUCCESS)
+        {
+            fprintf(stderr, "vkWaitForFences failed: %d\n", r);
+            // Recover strategy: mark device lost or try a soft return
+            return;
+        }
 
         // Acquire next image
         uint32_t imageIndex = 0;
@@ -262,10 +267,19 @@ namespace Engine
             frame.imageAcquiredSemaphore,
             VK_NULL_HANDLE,
             &imageIndex);
-        if (acquireRes != VK_SUCCESS)
+
+        if (acquireRes == VK_ERROR_OUT_OF_DATE_KHR)
         {
-            // TODO: handle resize/recreate
-            return;
+            // Window resized or swapchain invalid -> recreate and skip this frame
+            m_swapchain->Recreate(m_extent);
+            // If m_framebuffers depend on swapchain, rebuild them here too.
+            // RebuildFramebuffers();
+            return; // IMPORTANT: we did NOT reset the fence, so next frame’s wait will pass.
+        }
+        if (acquireRes != VK_SUCCESS && acquireRes != VK_SUBOPTIMAL_KHR)
+        {
+            fprintf(stderr, "vkAcquireNextImageKHR failed: %d\n", acquireRes);
+            return; // Do not reset the fence on failure paths
         }
 
         // Record command buffer
@@ -313,6 +327,7 @@ namespace Engine
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = &frame.renderFinishedSemaphore;
 
+        vkResetFences(m_device, 1, &frame.inFlightFence);
         vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, frame.inFlightFence);
 
         // Present
@@ -326,7 +341,6 @@ namespace Engine
         presentInfo.pImageIndices = &imageIndex;
 
         vkQueuePresentKHR(m_presentQueue, &presentInfo);
-
         // Advance frame index
         m_currentFrame = (m_currentFrame + 1) % m_maxFrames;
     }

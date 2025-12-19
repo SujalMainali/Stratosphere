@@ -19,6 +19,8 @@ namespace Engine
     public:
         GLFWWindow(const WindowProps &props)
         {
+            glfwSetErrorCallback([](int code, const char *desc)
+                                 { fprintf(stderr, "[GLFW ERROR %d] %s\n", code, desc); });
             if (!glfwInit())
                 throw std::runtime_error("GLFW init failed");
             glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // Vulkan
@@ -35,9 +37,10 @@ namespace Engine
             glfwSetWindowUserPointer(data->Window, data);
             glfwSetWindowCloseCallback(data->Window, [](GLFWwindow *wnd)
                                        {
-                auto d = (GLFWWindowData*)glfwGetWindowUserPointer(wnd);
-                //this calls the stored function
-                if (d && d->EventCallback) d->EventCallback("WindowClose"); });
+                auto d = static_cast<GLFWWindowData*>(glfwGetWindowUserPointer(wnd));
+                if (d && d->EventCallback) {
+                    d->EventCallback("WindowClose");
+                } });
         }
 
         virtual ~GLFWWindow() override
@@ -57,7 +60,10 @@ namespace Engine
         virtual unsigned int GetWidth() const override { return data->Width; }
         virtual unsigned int GetHeight() const override { return data->Height; }
 
-        virtual void SetEventCallback(const EventCallbackFn &cb) override { data->EventCallback = cb; } // This stores the function itself
+        virtual void SetEventCallback(const EventCallbackFn &cb) override
+        {
+            data->EventCallback = cb; // This stores the function itself
+        }
 
         virtual void *GetWindowPointer() override { return data->Window; }
 
