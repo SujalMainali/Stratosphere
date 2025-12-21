@@ -40,6 +40,8 @@ namespace Engine
         (void)frameCtx;
         // Bind pipeline
         m_pipeline.bind(cmd);
+        // Push offset: include all stages declared in the pipeline layout's push constant range
+        vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float) * 2, m_offset);
 
         // Dynamic viewport & scissor covering the current framebuffer extent
         VkViewport viewport{};
@@ -76,6 +78,11 @@ namespace Engine
         if (m_device != VK_NULL_HANDLE)
         {
             m_pipeline.destroy(m_device);
+            if (m_pipelineLayout != VK_NULL_HANDLE)
+            {
+                vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+                m_pipelineLayout = VK_NULL_HANDLE;
+            }
         }
     }
 
@@ -103,6 +110,25 @@ namespace Engine
         fs.pName = "main";
 
         pci.shaderStages = {vs, fs};
+
+        VkPushConstantRange pcRange{};
+        pcRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        pcRange.offset = 0;
+        pcRange.size = sizeof(float) * 2;
+
+        VkPipelineLayoutCreateInfo plInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        plInfo.pushConstantRangeCount = 1;
+        plInfo.pPushConstantRanges = &pcRange;
+        plInfo.setLayoutCount = 0;
+        plInfo.pSetLayouts = nullptr;
+
+        if (vkCreatePipelineLayout(pci.device, &plInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Triangles: failed to create pipeline layout");
+        }
+
+        // Ensure the PipelineCreateInfo uses the layout we just created
+        pci.pipelineLayout = m_pipelineLayout;
 
         // Vertex input: binding 0, stride = sizeof(vec2 + vec3) = 5 * float
         VkVertexInputBindingDescription bindingDesc{};

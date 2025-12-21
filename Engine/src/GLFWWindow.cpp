@@ -51,6 +51,18 @@ namespace Engine
                 d->Width = static_cast<unsigned int>(w);
                 d->Height = static_cast<unsigned int>(h);
                 if (d->EventCallback) d->EventCallback("WindowResize"); });
+
+            glfwSetKeyCallback(data->Window, [](GLFWwindow *wnd, int key, int /*scancode*/, int action, int /*mods*/)
+                               {
+                if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+                    auto d = static_cast<GLFWWindowData*>(glfwGetWindowUserPointer(wnd));
+                    if (!d || !d->EventCallback) return;
+                    if (key == GLFW_KEY_LEFT)  d->EventCallback("LeftPressed");
+                    if (key == GLFW_KEY_RIGHT) d->EventCallback("RightPressed");
+                    if (key == GLFW_KEY_UP)    d->EventCallback("UpPressed");
+                    if (key == GLFW_KEY_DOWN)  d->EventCallback("DownPressed");
+                    if (key == GLFW_KEY_ESCAPE) d->EventCallback("EscapePressed");
+                } });
         }
 
         virtual ~GLFWWindow() override

@@ -12,6 +12,34 @@ public:
     {
         // Ensure triangle resources are created and the pass is registered
         setupTriangle();
+
+        SetEventCallback([this](const std::string &e)
+                         {
+                             const float step = 0.07f;
+                             if (e == "LeftPressed")
+                             {
+                                m_offsetX = std::max(-1.0f, m_offsetX - step);
+                                if (m_trianglesPass)
+                                    m_trianglesPass->setOffset(m_offsetX, m_offsetY);
+                             }
+                             else if (e == "RightPressed")
+                             {
+                                m_offsetX = std::min(1.0f, m_offsetX + step);
+                                if (m_trianglesPass)
+                                    m_trianglesPass->setOffset(m_offsetX, m_offsetY);
+                             } 
+                            else if (e == "UpPressed")
+                            {
+                                m_offsetY = std::min(1.0f, m_offsetY - step);
+                                if (m_trianglesPass)
+                                    m_trianglesPass->setOffset(m_offsetX, m_offsetY);
+                            }
+                            else if (e == "DownPressed")
+                            {
+                                m_offsetY = std::max(-1.0f, m_offsetY + step);
+                                if (m_trianglesPass)
+                                    m_trianglesPass->setOffset(m_offsetX, m_offsetY);
+                            } });
     }
     ~MySampleApp()
     {
@@ -48,17 +76,17 @@ private:
         const float vertices[] = {
             // x, y,   r, g, b
             0.0f,
-            -0.5f,
+            -0.1f,
             1.0f,
             0.0f,
             0.0f,
-            0.5f,
-            0.5f,
+            0.1f,
+            0.1f,
             0.0f,
             1.0f,
             0.0f,
-            -0.5f,
-            0.5f,
+            -0.1f,
+            0.1f,
             0.0f,
             0.0f,
             1.0f,
@@ -88,12 +116,14 @@ private:
         // Register pass to renderer (renderer already initialized in Application ctor)
         GetRenderer().registerPass(m_trianglesPass);
 
-        // Inform module about current extent (optional: it receives onCreate with render pass)
-        // m_trianglesPass->onResize(GetVulkanContext(), GetRenderer().getExtent());
+        // Initialize offset (push constants) on the module
+        m_trianglesPass->setOffset(m_offsetX, m_offsetY);
     }
 
     Engine::VertexBufferHandle m_vertexBuffer{};
     std::shared_ptr<Engine::TrianglesRenderPassModule> m_trianglesPass;
+    float m_offsetX = 0.0f;
+    float m_offsetY = 0.0f;
 };
 
 Engine::Application *Engine::CreateApplication()

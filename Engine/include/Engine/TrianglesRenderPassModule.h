@@ -24,6 +24,11 @@ namespace Engine
 
         // Provide/Update vertex buffer binding
         void setVertexBinding(const VertexBinding &binding);
+        void setOffset(float x, float y)
+        {
+            m_offset[0] = x;
+            m_offset[1] = y;
+        }
 
         // RenderPassModule interface
         void onCreate(VulkanContext &ctx, VkRenderPass pass, const std::vector<VkFramebuffer> &fbs) override;
@@ -40,6 +45,8 @@ namespace Engine
         VkExtent2D m_extent{};
         Pipeline m_pipeline;
         VertexBinding m_binding;
+        VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
+        float m_offset[2] = {0.0f, 0.0f};
     };
 
 } // namespace Engine
