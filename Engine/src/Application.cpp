@@ -4,6 +4,7 @@
 #include "Engine/Renderer.h"
 #include "Engine/SwapChain.h"
 #include <iostream>
+#include <chrono>
 
 namespace Engine
 {
@@ -38,13 +39,20 @@ namespace Engine
 
     void Application::Run()
     {
+        auto lastFrameTime = std::chrono::steady_clock::now();
         while (m_Impl->running)
         {
+            const auto now = std::chrono::steady_clock::now();
+            const float deltaSeconds = std::chrono::duration<float>(now - lastFrameTime).count();
+            lastFrameTime = now;
+
             // Poll window events
             m_Impl->window->OnUpdate();
 
             // User update/render hooks
-            OnUpdate({});
+            TimeStep ts{};
+            ts.DeltaSeconds = deltaSeconds;
+            OnUpdate(ts);
             OnRender();
 
             // Draw one frame
