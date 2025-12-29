@@ -39,18 +39,21 @@ namespace Engine
             throw std::runtime_error("Mesh: failed to load shader modules");
         }
 
-        VkPipelineShaderStageCreateInfo vs{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        VkPipelineShaderStageCreateInfo vs{};
+        vs.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         vs.stage = VK_SHADER_STAGE_VERTEX_BIT;
         vs.module = vert;
         vs.pName = "main";
-        VkPipelineShaderStageCreateInfo fs{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        VkPipelineShaderStageCreateInfo fs{};
+        fs.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         fs.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
         fs.module = frag;
         fs.pName = "main";
         pci.shaderStages = {vs, fs};
 
         // Pipeline layout (no descriptors/push constants for minimal case)
-        VkPipelineLayoutCreateInfo plInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        VkPipelineLayoutCreateInfo plInfo{};
+        plInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         plInfo.setLayoutCount = 0;
         plInfo.pSetLayouts = nullptr;
         plInfo.pushConstantRangeCount = 0;
@@ -83,7 +86,8 @@ namespace Engine
         attrs[2].format = VK_FORMAT_R32G32_SFLOAT;
         attrs[2].offset = 24;
 
-        VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        VkPipelineVertexInputStateCreateInfo vi{};
+        vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vi.vertexBindingDescriptionCount = 1;
         vi.pVertexBindingDescriptions = &bindingDesc;
         vi.vertexAttributeDescriptionCount = 3;
@@ -92,14 +96,16 @@ namespace Engine
         pci.vertexInputProvided = true;
 
         // Input assembly
-        VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+        VkPipelineInputAssemblyStateCreateInfo ia{};
+        ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         ia.primitiveRestartEnable = VK_FALSE;
         pci.inputAssembly = ia;
         pci.inputAssemblyProvided = true;
 
         // Rasterization: disable culling for now (OBJ winding can vary; no camera yet)
-        VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        VkPipelineRasterizationStateCreateInfo rs{};
+        rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rs.depthClampEnable = VK_FALSE;
         rs.rasterizerDiscardEnable = VK_FALSE;
         rs.polygonMode = VK_POLYGON_MODE_FILL;

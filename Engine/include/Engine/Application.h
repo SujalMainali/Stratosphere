@@ -24,7 +24,7 @@ namespace Engine
         void Run();
 
         // Called by engine each frame; override in your Sample game class
-        virtual void OnUpdate(TimeStep ts) {}
+        virtual void OnUpdate(TimeStep) {}
 
         // Optional: called after render submission, for UI, etc.
         virtual void OnRender() {}

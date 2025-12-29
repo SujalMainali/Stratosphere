@@ -116,7 +116,8 @@ namespace Engine
         pcRange.offset = 0;
         pcRange.size = sizeof(float) * 2;
 
-        VkPipelineLayoutCreateInfo plInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        VkPipelineLayoutCreateInfo plInfo{};
+        plInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         plInfo.pushConstantRangeCount = 1;
         plInfo.pPushConstantRanges = &pcRange;
         plInfo.setLayoutCount = 0;
