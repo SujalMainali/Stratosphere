@@ -10,7 +10,7 @@
 
   Usage:
     - std::string text = readFileText("Sample/Entity.json");
-    - Prefab p = loadPrefabFromJson(text, registry, archetypes);
+    - Prefab p = loadPrefabFromJson(text, registry, archetypes, assets);
     - PrefabManager.add(p);
 */
 
@@ -22,15 +22,13 @@
 #include <sstream>
 #include <regex>
 #include <vector>
+#include <iostream>
 
 #include "ECS/Components.h"
 #include "ECS/ArchetypeManager.h"
 
 namespace Engine::ECS
 {
-    // Typed defaults per component ID. Extend as needed.
-    using DefaultValue = std::variant<Position, Velocity, Health>;
-
     // Prefab: a template for spawning entities with a given component signature and default values.
     struct Prefab
     {
@@ -96,20 +94,10 @@ namespace Engine::ECS
         return sig;
     }
 
-    // Minimal JSON parsing (regex-based fallback; replace with a proper JSON library later if desired).
-    // Expected JSON format example:
-    // {
-    //   "name": "TankBasic",
-    //   "components": ["Position","Velocity","Health"],
-    //   "defaults": {
-    //       "Position": {"x":-0.8,"y":-0.8,"z":0.0},
-    //       "Velocity": {"x":0.10,"y":0.05,"z":0.0},
-    //       "Health":   {"value":100.0}
-    //   }
-    // }
     inline Prefab loadPrefabFromJson(const std::string &jsonText,
                                      ComponentRegistry &registry,
-                                     ArchetypeManager &archetypes)
+                                     ArchetypeManager &archetypes,
+                                     Engine::AssetManager &assets)
     {
         Prefab p;
 
@@ -138,7 +126,35 @@ namespace Engine::ECS
             }
         }
 
-        // Resolve archetype
+        // Optional visuals: if a model is present, load it and apply a RenderMesh default.
+        // JSON schema: "visual": { "model": "path" , ... }
+        {
+            std::regex re_model(R"re("visual"\s*:\s*\{[\s\S]*?"model"\s*:\s*"([^"]+)")re");
+            std::smatch m;
+            if (std::regex_search(jsonText, m, re_model))
+            {
+                const std::string modelPath = m[1].str();
+                if (!modelPath.empty())
+                {
+                    Engine::MeshHandle h = assets.loadMesh(modelPath);
+                    if (h.isValid())
+                    {
+                        const uint32_t rmId = registry.ensureId("RenderMesh");
+                        p.signature.set(rmId);
+
+                        RenderMesh rm{};
+                        rm.handle = h;
+                        p.defaults[rmId] = rm;
+                    }
+                    else
+                    {
+                        std::cerr << "[Prefab] Warning: Failed to load model mesh: " << modelPath << " for prefab " << p.name << "\n";
+                    }
+                }
+            }
+        }
+
+        // Resolve archetype (after any signature adjustments like RenderMesh)
         p.archetypeId = archetypes.getOrCreate(p.signature);
 
         // Parse defaults: Position
@@ -181,6 +197,76 @@ namespace Engine::ECS
                 h.value = std::stof(m[1].str());
                 uint32_t cid = registry.ensureId("Health");
                 p.defaults.emplace(cid, h);
+            }
+        }
+
+        // Parse defaults: MoveTarget
+        {
+            std::regex re_target(R"("MoveTarget"\s*:\s*\{\s*"x"\s*:\s*([-+]?\d*\.?\d+),\s*"y"\s*:\s*([-+]?\d*\.?\d+),\s*"z"\s*:\s*([-+]?\d*\.?\d+),\s*"active"\s*:\s*(\d+)\s*\})");
+            std::smatch m;
+            if (std::regex_search(jsonText, m, re_target))
+            {
+                MoveTarget t{};
+                t.x = std::stof(m[1].str());
+                t.y = std::stof(m[2].str());
+                t.z = std::stof(m[3].str());
+                t.active = static_cast<uint8_t>(std::stoi(m[4].str()));
+                uint32_t cid = registry.ensureId("MoveTarget");
+                p.defaults.emplace(cid, t);
+            }
+        }
+
+        // Parse defaults: MoveSpeed
+        {
+            std::regex re_speed(R"("MoveSpeed"\s*:\s*\{\s*"value"\s*:\s*([-+]?\d*\.?\d+)\s*\})");
+            std::smatch m;
+            if (std::regex_search(jsonText, m, re_speed))
+            {
+                MoveSpeed s{};
+                s.value = std::stof(m[1].str());
+                uint32_t cid = registry.ensureId("MoveSpeed");
+                p.defaults.emplace(cid, s);
+            }
+        }
+
+        // Parse defaults: Radius
+        {
+            std::regex re_radius(R"("Radius"\s*:\s*\{\s*"r"\s*:\s*([-+]?\d*\.?\d+)\s*\})");
+            std::smatch m;
+            if (std::regex_search(jsonText, m, re_radius))
+            {
+                Radius r{};
+                r.r = std::stof(m[1].str());
+                uint32_t cid = registry.ensureId("Radius");
+                p.defaults.emplace(cid, r);
+            }
+        }
+
+        // Parse defaults: Separation
+        {
+            std::regex re_sep(R"("Separation"\s*:\s*\{\s*"value"\s*:\s*([-+]?\d*\.?\d+)\s*\})");
+            std::smatch m;
+            if (std::regex_search(jsonText, m, re_sep))
+            {
+                Separation s{};
+                s.value = std::stof(m[1].str());
+                uint32_t cid = registry.ensureId("Separation");
+                p.defaults.emplace(cid, s);
+            }
+        }
+
+        // Parse defaults: AvoidanceParams
+        {
+            std::regex re_ap(R"("AvoidanceParams"\s*:\s*\{\s*"strength"\s*:\s*([-+]?\d*\.?\d+),\s*"maxAccel"\s*:\s*([-+]?\d*\.?\d+),\s*"blend"\s*:\s*([-+]?\d*\.?\d+)\s*\})");
+            std::smatch m;
+            if (std::regex_search(jsonText, m, re_ap))
+            {
+                AvoidanceParams ap{};
+                ap.strength = std::stof(m[1].str());
+                ap.maxAccel = std::stof(m[2].str());
+                ap.blend = std::stof(m[3].str());
+                uint32_t cid = registry.ensureId("AvoidanceParams");
+                p.defaults.emplace(cid, ap);
             }
         }
 

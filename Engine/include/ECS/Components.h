@@ -19,6 +19,8 @@
 #include <iomanip>
 #include <algorithm>
 #include <unordered_map>
+#include <variant>
+#include <assets/AssetManager.h>
 
 namespace Engine::ECS
 {
@@ -27,6 +29,9 @@ namespace Engine::ECS
     // -----------------------
 
     // Spatial position in world space.
+    // Convention for gameplay:
+    //  - X/Z define the ground plane (meters).
+    //  - Y is height (meters).
     struct Position
     {
         float x = 0.0f;
@@ -48,6 +53,52 @@ namespace Engine::ECS
         float value = 100.0f;
     };
 
+    // Target position for movement.
+    struct MoveTarget
+    {
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        uint8_t active = 0; // 0 = inactive, 1 = active
+    };
+
+    // Movement speed
+    struct MoveSpeed
+    {
+        float value = 5.0f; // default if not overridden in prefabs
+    };
+
+    // Simple radius component for local avoidance
+    struct Radius
+    {
+        float r = 0.07f; // tune per unit type
+    };
+
+    // Desired extra spacing beyond physical radii (meters).
+    // Used by local avoidance to keep units from clustering too tightly.
+    struct Separation
+    {
+        float value = 0.0f;
+    };
+
+    // Tunables for local avoidance
+    struct AvoidanceParams
+    {
+        float strength = 1.0f; // separation strength
+        float maxAccel = 0.9f; // clamp acceleration (units/s^2)
+        float blend = 0.55f;   // velocity smoothing
+    };
+
+    // Row-level tag used by selection (no per-row storage; stored in row masks).
+    struct Selected
+    {
+    };
+
+    struct RenderMesh
+    {
+        MeshHandle handle;
+    };
+
+    // Typed defaults per component ID (used by Prefabs/Stores).
+    using DefaultValue = std::variant<Position, Velocity, Health, MoveTarget, MoveSpeed, Radius, Separation, AvoidanceParams, RenderMesh>;
     // -----------------------
     // Component Registry
     // -----------------------
