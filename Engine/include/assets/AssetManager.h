@@ -4,49 +4,65 @@
 #include <string>
 #include <unordered_map>
 #include <memory>
+#include <vector>
 
-#include "assets/MeshFormats.h" // MeshData + LoadSMeshV0FromFile
-#include "assets/MeshAsset.h"   // GPU-backed mesh asset
+#include "assets/Handles.h"
+
+#include "assets/MeshFormats.h"
+#include "assets/MeshAsset.h"
+
+#include "assets/SModelLoader.h"
+#include "assets/ModelFormat.h"
+
+#include "assets/TextureAsset.h"
+#include "assets/MaterialAsset.h"
+#include "assets/ModelAsset.h"
 
 namespace Engine
 {
-
-    // Strongly-typed handle for mesh assets
-    struct MeshHandle
-    {
-        uint64_t id = 0;
-        uint32_t generation = 0;
-        bool isValid() const { return id != 0; }
-    };
-
-    // Central manager for loading, caching, and destroying assets.
-    // Phase 1: Mesh-only (expand to textures/materials later).
+    // ---------------------------
+    // AssetManager
+    // ---------------------------
     class AssetManager
     {
     public:
-        // Updated: requires graphics queue + its family index.
-        // AssetManager will create a transient command pool per upload.
         AssetManager(VkDevice device,
                      VkPhysicalDevice phys,
                      VkQueue graphicsQueue,
                      uint32_t graphicsQueueFamilyIndex);
         ~AssetManager();
 
-        // Synchronous load: returns a handle and caches by path. Adds one reference to the asset.
+        // Existing mesh API
         MeshHandle loadMesh(const std::string &cookedMeshPath);
-
-        // Access raw asset pointer (nullptr if invalid/stale).
         MeshAsset *getMesh(MeshHandle h);
 
-        // Reference counting for lifetime management.
         void addRef(MeshHandle h);
         void release(MeshHandle h);
 
-        // Destroy assets with refCount == 0 and remove from caches.
+        // New smodel/model API
+        ModelHandle loadModel(const std::string &cookedModelPath);
+        ModelAsset *getModel(ModelHandle h);
+
+        MaterialAsset *getMaterial(MaterialHandle h);
+        TextureAsset *getTexture(TextureHandle h);
+
+        void addRef(ModelHandle h);
+        void release(ModelHandle h);
+
+        void addRef(MaterialHandle h);
+        void release(MaterialHandle h);
+
+        void addRef(TextureHandle h);
+        void release(TextureHandle h);
+
+        // Collect all zero-ref assets (and clear caches)
         void garbageCollect();
 
     private:
-        MeshHandle createMeshFromData(const MeshData &data, const std::string &path);
+        MeshHandle createMeshFromData_Internal(const MeshData &data, const std::string &path, uint32_t initialRef);
+        TextureHandle createTexture_Internal(std::unique_ptr<TextureAsset> tex, uint32_t initialRef);
+        MaterialHandle createMaterial_Internal(std::unique_ptr<MaterialAsset> mat, uint32_t initialRef);
+        ModelHandle createModel_Internal(std::unique_ptr<ModelAsset> model, const std::string &path, uint32_t initialRef);
 
     private:
         VkDevice m_device = VK_NULL_HANDLE;
@@ -54,8 +70,15 @@ namespace Engine
         VkQueue m_graphicsQueue = VK_NULL_HANDLE;
         uint32_t m_graphicsQueueFamilyIndex = 0;
 
-        uint64_t m_nextID = 1;
+        // Separate ID spaces
+        uint64_t m_nextMeshID = 1;
+        uint64_t m_nextTextureID = 1;
+        uint64_t m_nextMaterialID = 1;
+        uint64_t m_nextModelID = 1;
 
+        // ---------------------------
+        // Mesh entries
+        // ---------------------------
         struct MeshEntry
         {
             std::unique_ptr<MeshAsset> asset;
@@ -64,11 +87,53 @@ namespace Engine
             std::string path;
         };
 
-        // Storage by ID
-        std::unordered_map<uint64_t, MeshEntry> m_meshes;
+        // ---------------------------
+        // Texture entries
+        // ---------------------------
+        struct TextureEntry
+        {
+            std::unique_ptr<TextureAsset> asset;
+            uint32_t generation = 1;
+            uint32_t refCount = 0;
+        };
 
-        // Path → handle cache to avoid duplicate loads
+        std::unordered_map<uint64_t, TextureEntry> m_textures;
+
+        // ---------------------------
+        // Material entries
+        // ---------------------------
+        struct MaterialEntry
+        {
+            std::unique_ptr<MaterialAsset> asset;
+            uint32_t generation = 1;
+            uint32_t refCount = 0;
+
+            // Dependencies: textures referenced by this material
+            std::vector<TextureHandle> textureDeps;
+        };
+
+        std::unordered_map<uint64_t, MaterialEntry> m_materials;
+
+        // ---------------------------
+        // Model entries
+        // ---------------------------
+        struct ModelEntry
+        {
+            std::unique_ptr<ModelAsset> asset;
+            uint32_t generation = 1;
+            uint32_t refCount = 0;
+            std::string path;
+
+            // Dependencies: meshes + materials used by this model
+            std::vector<MeshHandle> meshDeps;
+            std::vector<MaterialHandle> materialDeps;
+        };
+
+        std::unordered_map<uint64_t, MeshEntry> m_meshes;
         std::unordered_map<std::string, MeshHandle> m_meshPathCache;
+
+        std::unordered_map<uint64_t, ModelEntry> m_models;
+        std::unordered_map<std::string, ModelHandle> m_modelPathCache;
     };
 
 } // namespace Engine
