@@ -20,7 +20,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <variant>
-#include <assets/AssetManager.h>
+#include <assets/Handles.h>
 
 namespace Engine::ECS
 {
@@ -92,13 +92,13 @@ namespace Engine::ECS
     {
     };
 
-    struct RenderMesh
+    struct RenderModel
     {
-        MeshHandle handle;
+        ModelHandle handle;
     };
 
     // Typed defaults per component ID (used by Prefabs/Stores).
-    using DefaultValue = std::variant<Position, Velocity, Health, MoveTarget, MoveSpeed, Radius, Separation, AvoidanceParams, RenderMesh>;
+    using DefaultValue = std::variant<Position, Velocity, Health, MoveTarget, MoveSpeed, Radius, Separation, AvoidanceParams, RenderModel>;
     // -----------------------
     // Component Registry
     // -----------------------

@@ -54,8 +54,8 @@ namespace Engine::ECS
                 m_separations.emplace_back(Separation{});
             if (hasAvoidanceParams())
                 m_avoidanceParams.emplace_back(AvoidanceParams{});
-            if (hasRenderMesh())
-                m_renderMeshes.emplace_back(RenderMesh{});
+            if (hasRenderModel())
+                m_renderModels.emplace_back(RenderModel{});
 
             return row;
         }
@@ -92,8 +92,8 @@ namespace Engine::ECS
                 swapErase(m_separations);
             if (hasAvoidanceParams())
                 swapErase(m_avoidanceParams);
-            if (hasRenderMesh())
-                swapErase(m_renderMeshes);
+            if (hasRenderModel())
+                swapErase(m_renderModels);
         }
 
         // Apply typed defaults for a newly created row.
@@ -138,9 +138,9 @@ namespace Engine::ECS
                 {
                     m_avoidanceParams[row] = std::get<AvoidanceParams>(kv.second);
                 }
-                else if (std::holds_alternative<RenderMesh>(kv.second) && hasRenderMesh())
+                else if (std::holds_alternative<RenderModel>(kv.second) && hasRenderModel())
                 {
-                    m_renderMeshes[row] = std::get<RenderMesh>(kv.second);
+                    m_renderModels[row] = std::get<RenderModel>(kv.second);
                 }
             }
         }
@@ -178,8 +178,8 @@ namespace Engine::ECS
         std::vector<AvoidanceParams> &avoidanceParams() { return m_avoidanceParams; }
         const std::vector<AvoidanceParams> &avoidanceParams() const { return m_avoidanceParams; }
 
-        std::vector<RenderMesh> &renderMeshes() { return m_renderMeshes; }
-        const std::vector<RenderMesh> &renderMeshes() const { return m_renderMeshes; }
+        std::vector<RenderModel> &renderModels() { return m_renderModels; }
+        const std::vector<RenderModel> &renderModels() const { return m_renderModels; }
 
         // Helpers
         bool hasPosition() const { return m_hasPosition; }
@@ -190,7 +190,7 @@ namespace Engine::ECS
         bool hasRadius() const { return m_hasRadius; }
         bool hasSeparation() const { return m_hasSeparation; }
         bool hasAvoidanceParams() const { return m_hasAvoidanceParams; }
-        bool hasRenderMesh() const { return m_hasRenderMesh; }
+        bool hasRenderModel() const { return m_hasRenderModel; }
 
         // Resolve which known components are present in signature; enables arrays accordingly.
         void resolveKnownComponents(ComponentRegistry &registry)
@@ -212,7 +212,7 @@ namespace Engine::ECS
             m_hasRadius = m_signature.has(radId);
             m_hasSeparation = m_signature.has(sepId);
             m_hasAvoidanceParams = m_signature.has(apId);
-            m_hasRenderMesh = m_signature.has(rmId);
+            m_hasRenderModel = m_signature.has(rmId);
         }
 
     private:
@@ -229,7 +229,7 @@ namespace Engine::ECS
         std::vector<Radius> m_radii;
         std::vector<Separation> m_separations;
         std::vector<AvoidanceParams> m_avoidanceParams;
-        std::vector<RenderMesh> m_renderMeshes;
+        std::vector<RenderModel> m_renderModels;
 
         // Flags indicating which arrays are active.
         bool m_hasPosition = false;
@@ -240,7 +240,7 @@ namespace Engine::ECS
         bool m_hasRadius = false;
         bool m_hasSeparation = false;
         bool m_hasAvoidanceParams = false;
-        bool m_hasRenderMesh = false;
+        bool m_hasRenderModel = false;
     };
 
     class ArchetypeStoreManager

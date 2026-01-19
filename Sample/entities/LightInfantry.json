@@ -47,9 +47,6 @@
         }
     },
     "visual": {
-        "model": "assets/ObjModels/units/light_infantry.smesh",
-        "materialSet": "materials/faction_tint_standard.json",
-        "visualScale": 1.0,
-        "castShadow": true
+        "model": "assets/ObjModels/units/light_infantry.smodel"
     }
 }

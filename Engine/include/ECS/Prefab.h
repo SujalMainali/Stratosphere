@@ -26,6 +26,7 @@
 
 #include "ECS/Components.h"
 #include "ECS/ArchetypeManager.h"
+#include "assets/AssetManager.h"
 
 namespace Engine::ECS
 {
@@ -136,13 +137,13 @@ namespace Engine::ECS
                 const std::string modelPath = m[1].str();
                 if (!modelPath.empty())
                 {
-                    Engine::MeshHandle h = assets.loadMesh(modelPath);
+                    Engine::ModelHandle h = assets.loadModel(modelPath);
                     if (h.isValid())
                     {
                         const uint32_t rmId = registry.ensureId("RenderMesh");
                         p.signature.set(rmId);
 
-                        RenderMesh rm{};
+                        RenderModel rm{};
                         rm.handle = h;
                         p.defaults[rmId] = rm;
                     }

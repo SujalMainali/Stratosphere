@@ -4,6 +4,10 @@
 #include "Structs/SpawnGroup.h"
 #include "assets/AssetManager.h"
 #include "assets/MeshAsset.h"
+#include "assets/Handles.h"
+#include "assets/ModelAsset.h"
+#include "assets/MaterialAsset.h"
+#include "assets/TextureAsset.h"
 #include "assets/MeshFormats.h"
 #include "Engine/VulkanContext.h"
 #include "Engine/Window.h"
@@ -37,6 +41,8 @@ public:
             GetVulkanContext().GetGraphicsQueue(),
             GetVulkanContext().GetGraphicsQueueFamilyIndex());
 
+        verifyLoadSModel();
+
         // Allow gameplay systems to resolve RenderMesh handles to loaded assets.
         m_systems.SetAssetManager(m_assets.get());
 
@@ -56,8 +62,8 @@ public:
     {
         vkDeviceWaitIdle(GetVulkanContext().GetDevice());
 
-        // Release mesh handle and collect unused assets
-        m_assets->release(m_bugattiHandle);
+        // Release model handle and collect unused assets
+        m_assets->release(m_testModel);
         m_assets->garbageCollect();
 
         // Destroy triangle vertex buffer
@@ -88,6 +94,7 @@ private:
     static float pxToNdcY(double py, int h) { return static_cast<float>(((py / double(h)) * 2.0 - 1.0)); }
 
     void setupTriangleRenderer()
+    // Legacy code:- Kept as a sample of minimal rendering process
     {
         // Interleaved vertex data: vec2 position, vec3 color (matches your triangle pipeline)
         const float vertices[] = {
@@ -196,34 +203,6 @@ private:
         Sample::SpawnFromScenarioFile(ecs, "Scinerio.json", /*selectSpawned=*/true);
     }
 
-    void setupMeshFromAssets()
-    {
-        // Load cooked mesh via AssetManager
-        // The asset variable holds the mesh data and GPU buffers
-
-        const char *path = "assets/ObjModels/male.smesh";
-        m_bugattiHandle = m_assets->loadMesh(path);
-        Engine::MeshAsset *asset = m_assets->getMesh(m_bugattiHandle);
-        if (!asset)
-        {
-            std::cerr << "Failed to load/get mesh asset: " << path << std::endl;
-            return;
-        }
-
-        // Create & register mesh pass
-        m_meshPass = std::make_shared<Engine::MeshRenderPassModule>();
-        Engine::MeshRenderPassModule::MeshBinding binding{};
-        binding.vertexBuffer = asset->getVertexBuffer();
-        binding.vertexOffset = 0;
-        binding.indexBuffer = asset->getIndexBuffer();
-        binding.indexOffset = 0;
-        binding.indexCount = asset->getIndexCount();
-        binding.indexType = asset->getIndexType();
-        m_meshPass->setMesh(binding);
-
-        GetRenderer().registerPass(m_meshPass);
-    }
-
     void OnEvent(const std::string &name)
     {
         // Keep the mouse event wiring; logic will be updated later.
@@ -266,18 +245,92 @@ private:
             return;
         }
     }
+    void verifyLoadSModel()
+    // Simple integrity test for .smodel loading
+    {
+        const char *modelPath = "assets/LuiteantHead/lieutenantHead.smodel";
+
+        std::cout << "\n[SMODEL] Loading: " << modelPath << "\n";
+
+        m_testModel = m_assets->loadModel(modelPath);
+        if (!m_testModel.isValid())
+        {
+            std::cerr << "[SMODEL] loadModel failed: " << modelPath << "\n";
+            return;
+        }
+
+        Engine::ModelAsset *model = m_assets->getModel(m_testModel);
+        if (!model)
+        {
+            std::cerr << "[SMODEL] getModel returned nullptr\n";
+            return;
+        }
+
+        std::cout << "[SMODEL] OK primitives=" << model->primitives.size() << "\n";
+
+        if (model->primitives.empty())
+        {
+            std::cerr << "[SMODEL] Model has 0 primitives (unexpected)\n";
+            return;
+        }
+
+        // Validate primitives -> mesh + material resolves
+        for (size_t i = 0; i < model->primitives.size(); ++i)
+        {
+            const Engine::ModelPrimitive &prim = model->primitives[i];
+
+            Engine::MeshAsset *mesh = m_assets->getMesh(prim.mesh);
+            if (!mesh)
+            {
+                std::cerr << "[SMODEL] Primitive " << i << ": mesh resolve failed\n";
+                continue;
+            }
+
+            std::cout << "  Prim[" << i << "] Mesh OK"
+                      << " indices=" << prim.indexCount
+                      << " vb=" << (void *)mesh->getVertexBuffer()
+                      << " ib=" << (void *)mesh->getIndexBuffer()
+                      << "\n";
+
+            Engine::MaterialAsset *mat = m_assets->getMaterial(prim.material);
+            if (!mat)
+            {
+                std::cout << "           Material: (missing)\n";
+                continue;
+            }
+
+            std::cout << "           Material OK"
+                      << " baseColor=("
+                      << mat->baseColorFactor[0] << ", "
+                      << mat->baseColorFactor[1] << ", "
+                      << mat->baseColorFactor[2] << ", "
+                      << mat->baseColorFactor[3] << ")\n";
+
+            // Optional: verify textures resolve
+            if (mat->baseColorTexture.isValid())
+            {
+                Engine::TextureAsset *tex = m_assets->getTexture(mat->baseColorTexture);
+                std::cout << "           BaseColorTex: " << (tex ? "OK" : "FAILED") << "\n";
+            }
+            if (mat->normalTexture.isValid())
+            {
+                Engine::TextureAsset *tex = m_assets->getTexture(mat->normalTexture);
+                std::cout << "           NormalTex: " << (tex ? "OK" : "FAILED") << "\n";
+            }
+        }
+
+        std::cout << "[SMODEL] Verification complete \n\n";
+    }
 
 private:
     // Asset management
     std::unique_ptr<Engine::AssetManager> m_assets;
-    Engine::MeshHandle m_bugattiHandle{};
 
     // Triangle state
     Engine::VertexBufferHandle m_triangleVB{};
     Engine::VertexBufferHandle m_triangleInstancesVB{};
     std::shared_ptr<Engine::TrianglesRenderPassModule> m_trianglesPass;
     Engine::TrianglesRenderPassModule::VertexBinding m_triangleBinding{};
-    bool m_showMesh = false;
     double m_timeAccum = 0.0;
 
     // Mouse state
@@ -289,6 +342,8 @@ private:
 
     // Gameplay systems runner
     Sample::SystemRunner m_systems;
+
+    Engine::ModelHandle m_testModel{};
 };
 
 int main()

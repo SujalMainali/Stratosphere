@@ -35,12 +35,12 @@ public:
                 continue;
             if (!store.signature().containsNone(excluded()))
                 continue;
-            if (!store.hasRenderMesh())
+            if (!store.hasRenderModel())
                 continue;
             if (!store.hasPosition())
                 continue;
 
-            auto &renderMeshes = const_cast<std::vector<Engine::ECS::RenderMesh> &>(store.renderMeshes());
+            auto &renderModels = const_cast<std::vector<Engine::ECS::RenderModel> &>(store.renderModels());
             auto &positions = const_cast<std::vector<Engine::ECS::Position> &>(store.positions());
             const auto &masks = store.rowMasks();
             const uint32_t n = store.size();
@@ -50,8 +50,8 @@ public:
                 if (!masks[row].matches(required(), excluded()))
                     continue;
 
-                const Engine::MeshHandle handle = renderMeshes[row].handle;
-                Engine::MeshAsset *asset = m_assets->getMesh(handle);
+                const Engine::ModelHandle handle = renderModels[row].handle;
+                Engine::ModelAsset *asset = m_assets->getModel(handle);
                 if (!asset)
                     continue;
 
