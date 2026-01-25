@@ -209,13 +209,27 @@ namespace Engine
         VkImage &outImage,
         VkDeviceMemory &outMemory)
     {
+        return CreateImage2D(device, physicalDevice, width, height, format, usage, 1u, outImage, outMemory);
+    }
+
+    VkResult CreateImage2D(
+        VkDevice device,
+        VkPhysicalDevice physicalDevice,
+        uint32_t width,
+        uint32_t height,
+        VkFormat format,
+        VkImageUsageFlags usage,
+        uint32_t mipLevels,
+        VkImage &outImage,
+        VkDeviceMemory &outMemory)
+    {
         VkImageCreateInfo ii{};
         ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         ii.imageType = VK_IMAGE_TYPE_2D;
         ii.extent.width = width;
         ii.extent.height = height;
         ii.extent.depth = 1;
-        ii.mipLevels = 1; // phase 1: mipmaps later
+        ii.mipLevels = (mipLevels == 0) ? 1u : mipLevels;
         ii.arrayLayers = 1;
         ii.format = format;
         ii.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -264,6 +278,17 @@ namespace Engine
         VkImageAspectFlags aspectFlags,
         VkImageView &outView)
     {
+        return CreateImageView2D(device, image, format, aspectFlags, 1u, outView);
+    }
+
+    VkResult CreateImageView2D(
+        VkDevice device,
+        VkImage image,
+        VkFormat format,
+        VkImageAspectFlags aspectFlags,
+        uint32_t mipLevels,
+        VkImageView &outView)
+    {
         VkImageViewCreateInfo vi{};
         vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         vi.image = image;
@@ -272,7 +297,7 @@ namespace Engine
 
         vi.subresourceRange.aspectMask = aspectFlags;
         vi.subresourceRange.baseMipLevel = 0;
-        vi.subresourceRange.levelCount = 1;
+        vi.subresourceRange.levelCount = (mipLevels == 0) ? 1u : mipLevels;
         vi.subresourceRange.baseArrayLayer = 0;
         vi.subresourceRange.layerCount = 1;
 
@@ -390,6 +415,137 @@ namespace Engine
             &region);
     }
 
+    bool CmdGenerateMipmaps(
+        UploadContext &ctx,
+        VkImage image,
+        VkFormat format,
+        int32_t width,
+        int32_t height,
+        uint32_t mipLevels)
+    {
+        if (!ctx.begun || ctx.cmd == VK_NULL_HANDLE)
+            return false;
+        if (mipLevels <= 1)
+            return true;
+
+        VkFormatProperties props{};
+        vkGetPhysicalDeviceFormatProperties(ctx.physicalDevice, format, &props);
+
+        const bool supportsLinearBlit =
+            (props.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
+        if (!supportsLinearBlit)
+            return false;
+
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.image = image;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        barrier.subresourceRange.levelCount = 1;
+
+        int32_t mipW = width;
+        int32_t mipH = height;
+
+        for (uint32_t i = 1; i < mipLevels; ++i)
+        {
+            // Transition (i-1) to TRANSFER_SRC for blit
+            barrier.subresourceRange.baseMipLevel = i - 1;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            vkCmdPipelineBarrier(
+                ctx.cmd,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                0,
+                0, nullptr,
+                0, nullptr,
+                1, &barrier);
+
+            // Transition mip i to TRANSFER_DST
+            barrier.subresourceRange.baseMipLevel = i;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            vkCmdPipelineBarrier(
+                ctx.cmd,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                0,
+                0, nullptr,
+                0, nullptr,
+                1, &barrier);
+
+            VkImageBlit blit{};
+            blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            blit.srcSubresource.mipLevel = i - 1;
+            blit.srcSubresource.baseArrayLayer = 0;
+            blit.srcSubresource.layerCount = 1;
+            blit.srcOffsets[0] = {0, 0, 0};
+            blit.srcOffsets[1] = {mipW, mipH, 1};
+
+            const int32_t nextW = (mipW > 1) ? (mipW / 2) : 1;
+            const int32_t nextH = (mipH > 1) ? (mipH / 2) : 1;
+
+            blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            blit.dstSubresource.mipLevel = i;
+            blit.dstSubresource.baseArrayLayer = 0;
+            blit.dstSubresource.layerCount = 1;
+            blit.dstOffsets[0] = {0, 0, 0};
+            blit.dstOffsets[1] = {nextW, nextH, 1};
+
+            vkCmdBlitImage(
+                ctx.cmd,
+                image,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                image,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                1,
+                &blit,
+                VK_FILTER_LINEAR);
+
+            // Transition (i-1) to SHADER_READ_ONLY
+            barrier.subresourceRange.baseMipLevel = i - 1;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(
+                ctx.cmd,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                0,
+                0, nullptr,
+                0, nullptr,
+                1, &barrier);
+
+            mipW = nextW;
+            mipH = nextH;
+        }
+
+        // Transition last mip to SHADER_READ_ONLY
+        barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(
+            ctx.cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier);
+
+        return true;
+    }
+
     // ============================================================
     // Sampler creation
     // ============================================================
@@ -403,6 +559,21 @@ namespace Engine
         VkFilter magFilter,
         VkSamplerMipmapMode mipMode,
         float maxAnisotropy,
+        VkSampler &outSampler)
+    {
+        return CreateTextureSampler(device, physicalDevice, addressU, addressV, minFilter, magFilter, mipMode, maxAnisotropy, 0.0f, outSampler);
+    }
+
+    VkResult CreateTextureSampler(
+        VkDevice device,
+        VkPhysicalDevice physicalDevice,
+        VkSamplerAddressMode addressU,
+        VkSamplerAddressMode addressV,
+        VkFilter minFilter,
+        VkFilter magFilter,
+        VkSamplerMipmapMode mipMode,
+        float maxAnisotropy,
+        float maxLod,
         VkSampler &outSampler)
     {
         VkPhysicalDeviceProperties props{};
@@ -419,9 +590,8 @@ namespace Engine
         si.magFilter = magFilter;
         si.mipmapMode = mipMode;
 
-        // Phase 1: only 1 mip level, so LOD range stays at 0.
         si.minLod = 0.0f;
-        si.maxLod = 0.0f;
+        si.maxLod = (maxLod > 0.0f) ? maxLod : 0.0f;
         si.mipLodBias = 0.0f;
 
         // Optional anisotropy (if supported and requested)

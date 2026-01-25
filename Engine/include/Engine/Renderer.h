@@ -60,6 +60,12 @@ namespace Engine
         VkExtent2D m_extent{};
         VkFormat m_swapchainImageFormat = VK_FORMAT_UNDEFINED;
 
+        // Depth attachment resources (one per swapchain image)
+        VkFormat m_depthFormat = VK_FORMAT_UNDEFINED;
+        std::vector<VkImage> m_depthImages;
+        std::vector<VkDeviceMemory> m_depthMemories;
+        std::vector<VkImageView> m_depthImageViews;
+
         std::vector<FrameContext> m_frames;
         uint32_t m_currentFrame = 0;
 
@@ -76,6 +82,13 @@ namespace Engine
         // Destroy helpers
         void destroySyncObjects();
         void destroyCommandPoolsAndBuffers();
+
+        // Depth helpers
+        void createDepthResources();
+        void destroyDepthResources();
+
+        // Swapchain-dependent recreate helper
+        void recreateSwapchainDependent();
     };
 
     class RenderPassModule

@@ -81,12 +81,33 @@ namespace Engine
         VkImage &outImage,
         VkDeviceMemory &outMemory);
 
+    // Create a 2D GPU image with explicit mip levels.
+    VkResult CreateImage2D(
+        VkDevice device,
+        VkPhysicalDevice physicalDevice,
+        uint32_t width,
+        uint32_t height,
+        VkFormat format,
+        VkImageUsageFlags usage,
+        uint32_t mipLevels,
+        VkImage &outImage,
+        VkDeviceMemory &outMemory);
+
     // Create an image view for sampling.
     VkResult CreateImageView2D(
         VkDevice device,
         VkImage image,
         VkFormat format,
         VkImageAspectFlags aspectFlags,
+        VkImageView &outView);
+
+    // Create an image view spanning multiple mip levels.
+    VkResult CreateImageView2D(
+        VkDevice device,
+        VkImage image,
+        VkFormat format,
+        VkImageAspectFlags aspectFlags,
+        uint32_t mipLevels,
         VkImageView &outView);
 
     // ============================================================
@@ -109,6 +130,17 @@ namespace Engine
         uint32_t width,
         uint32_t height);
 
+    // Record mipmap generation via blits for a 2D color image.
+    // Expects mip 0 to be in TRANSFER_DST_OPTIMAL.
+    // On success, transitions all mips to SHADER_READ_ONLY_OPTIMAL.
+    bool CmdGenerateMipmaps(
+        UploadContext &ctx,
+        VkImage image,
+        VkFormat format,
+        int32_t width,
+        int32_t height,
+        uint32_t mipLevels);
+
     // ============================================================
     // Sampler creation
     // ============================================================
@@ -121,6 +153,18 @@ namespace Engine
         VkFilter magFilter,
         VkSamplerMipmapMode mipMode,
         float maxAnisotropy,
+        VkSampler &outSampler);
+
+    VkResult CreateTextureSampler(
+        VkDevice device,
+        VkPhysicalDevice physicalDevice,
+        VkSamplerAddressMode addressU,
+        VkSamplerAddressMode addressV,
+        VkFilter minFilter,
+        VkFilter magFilter,
+        VkSamplerMipmapMode mipMode,
+        float maxAnisotropy,
+        float maxLod,
         VkSampler &outSampler);
 
 } // namespace Engine
