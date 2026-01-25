@@ -4,9 +4,51 @@
 #include "Engine/Renderer.h"
 #include "Engine/VulkanContext.h"
 #include "Engine/SwapChain.h"
+#include "utils/ImageUtils.h"
 
 namespace Engine
 {
+    static VkFormat findSupportedFormat(
+        VkPhysicalDevice phys,
+        const std::vector<VkFormat> &candidates,
+        VkImageTiling tiling,
+        VkFormatFeatureFlags features)
+    {
+        for (VkFormat format : candidates)
+        {
+            VkFormatProperties props{};
+            vkGetPhysicalDeviceFormatProperties(phys, format, &props);
+
+            if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features)
+                return format;
+            if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features)
+                return format;
+        }
+        return VK_FORMAT_UNDEFINED;
+    }
+
+    static VkFormat findDepthFormat(VkPhysicalDevice phys)
+    {
+        // Prefer D32; fall back to common packed depth/stencil formats.
+        return findSupportedFormat(
+            phys,
+            {
+                VK_FORMAT_D32_SFLOAT,
+                VK_FORMAT_D32_SFLOAT_S8_UINT,
+                VK_FORMAT_D24_UNORM_S8_UINT,
+            },
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    }
+
+    static VkImageAspectFlags depthAspectFlags(VkFormat fmt)
+    {
+        VkImageAspectFlags flags = VK_IMAGE_ASPECT_DEPTH_BIT;
+        if (fmt == VK_FORMAT_D32_SFLOAT_S8_UINT || fmt == VK_FORMAT_D24_UNORM_S8_UINT)
+            flags |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        return flags;
+    }
+
     Renderer::Renderer(VulkanContext *ctx, SwapChain *swapchain, uint32_t maxFramesInFlight)
         : m_ctx(ctx), m_swapchain(swapchain), m_maxFrames(maxFramesInFlight)
     {
@@ -54,6 +96,11 @@ namespace Engine
         // prepare per-frame slots
         m_frames.resize(m_maxFrames);
 
+        // swapchain-dependent
+        m_swapchainImageFormat = m_swapchain->GetImageFormat();
+        m_extent = m_swapchain->GetExtent();
+
+        createDepthResources();
         createMainRenderPass();
         createFramebuffers();
         createSyncObjects();
@@ -77,6 +124,11 @@ namespace Engine
         // prepare per-frame slots
         m_frames.resize(m_maxFrames);
 
+        // swapchain-dependent
+        m_swapchainImageFormat = m_swapchain->GetImageFormat();
+        m_extent = m_swapchain->GetExtent();
+
+        createDepthResources();
         createMainRenderPass();
         createFramebuffers();
         createSyncObjects();
@@ -120,6 +172,8 @@ namespace Engine
         }
         m_framebuffers.clear();
 
+        destroyDepthResources();
+
         // Destroy main render pass
         if (m_mainRenderPass != VK_NULL_HANDLE)
         {
@@ -144,6 +198,11 @@ namespace Engine
 
     void Renderer::createMainRenderPass()
     {
+        if (m_depthFormat == VK_FORMAT_UNDEFINED)
+        {
+            m_depthFormat = findDepthFormat(m_ctx->GetPhysicalDevice());
+        }
+
         // Color attachment tied to swapchain image format
         VkAttachmentDescription colorAttachment{};
         colorAttachment.format = m_swapchainImageFormat;
@@ -155,28 +214,45 @@ namespace Engine
         colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+        // Depth attachment (one image per swapchain image)
+        VkAttachmentDescription depthAttachment{};
+        depthAttachment.format = m_depthFormat;
+        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
         VkAttachmentReference colorAttachmentRef{};
         colorAttachmentRef.attachment = 0;
         colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentReference depthAttachmentRef{};
+        depthAttachmentRef.attachment = 1;
+        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorAttachmentRef;
+        subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
         // Subpass dependency from external -> subpass 0
         VkSubpassDependency dependency{};
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
         dependency.dstSubpass = 0;
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
         dependency.srcAccessMask = 0;
-        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
         VkRenderPassCreateInfo rpInfo{};
         rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        rpInfo.attachmentCount = 1;
-        rpInfo.pAttachments = &colorAttachment;
+        VkAttachmentDescription attachments[2] = {colorAttachment, depthAttachment};
+        rpInfo.attachmentCount = 2;
+        rpInfo.pAttachments = attachments;
         rpInfo.subpassCount = 1;
         rpInfo.pSubpasses = &subpass;
         rpInfo.dependencyCount = 1;
@@ -193,14 +269,19 @@ namespace Engine
         const auto &imageViews = m_swapchain->GetImageViews();
         m_framebuffers.resize(imageViews.size());
 
+        if (m_depthImageViews.size() != imageViews.size())
+        {
+            throw std::runtime_error("Renderer::createFramebuffers - depth resources not initialized or size mismatch");
+        }
+
         for (size_t i = 0; i < imageViews.size(); ++i)
         {
-            VkImageView attachments[1] = {imageViews[i]};
+            VkImageView attachments[2] = {imageViews[i], m_depthImageViews[i]};
 
             VkFramebufferCreateInfo fbInfo{};
             fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
             fbInfo.renderPass = m_mainRenderPass;
-            fbInfo.attachmentCount = 1;
+            fbInfo.attachmentCount = 2;
             fbInfo.pAttachments = attachments;
             fbInfo.width = m_extent.width;
             fbInfo.height = m_extent.height;
@@ -210,6 +291,124 @@ namespace Engine
             {
                 throw std::runtime_error("Renderer::createFramebuffers - failed to create framebuffer");
             }
+        }
+    }
+
+    void Renderer::createDepthResources()
+    {
+        destroyDepthResources();
+
+        m_depthFormat = findDepthFormat(m_ctx->GetPhysicalDevice());
+        if (m_depthFormat == VK_FORMAT_UNDEFINED)
+        {
+            throw std::runtime_error("Renderer::createDepthResources - failed to find supported depth format");
+        }
+
+        const auto &imageViews = m_swapchain->GetImageViews();
+        m_depthImages.resize(imageViews.size(), VK_NULL_HANDLE);
+        m_depthMemories.resize(imageViews.size(), VK_NULL_HANDLE);
+        m_depthImageViews.resize(imageViews.size(), VK_NULL_HANDLE);
+
+        for (size_t i = 0; i < imageViews.size(); ++i)
+        {
+            VkResult r = CreateImage2D(
+                m_device,
+                m_ctx->GetPhysicalDevice(),
+                m_extent.width,
+                m_extent.height,
+                m_depthFormat,
+                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                m_depthImages[i],
+                m_depthMemories[i]);
+            if (r != VK_SUCCESS)
+            {
+                throw std::runtime_error("Renderer::createDepthResources - failed to create depth image");
+            }
+
+            r = CreateImageView2D(
+                m_device,
+                m_depthImages[i],
+                m_depthFormat,
+                depthAspectFlags(m_depthFormat),
+                m_depthImageViews[i]);
+            if (r != VK_SUCCESS)
+            {
+                throw std::runtime_error("Renderer::createDepthResources - failed to create depth image view");
+            }
+        }
+    }
+
+    void Renderer::destroyDepthResources()
+    {
+        for (auto &iv : m_depthImageViews)
+        {
+            if (iv != VK_NULL_HANDLE)
+            {
+                vkDestroyImageView(m_device, iv, nullptr);
+                iv = VK_NULL_HANDLE;
+            }
+        }
+        for (auto &img : m_depthImages)
+        {
+            if (img != VK_NULL_HANDLE)
+            {
+                vkDestroyImage(m_device, img, nullptr);
+                img = VK_NULL_HANDLE;
+            }
+        }
+        for (auto &mem : m_depthMemories)
+        {
+            if (mem != VK_NULL_HANDLE)
+            {
+                vkFreeMemory(m_device, mem, nullptr);
+                mem = VK_NULL_HANDLE;
+            }
+        }
+        m_depthImageViews.clear();
+        m_depthImages.clear();
+        m_depthMemories.clear();
+    }
+
+    void Renderer::recreateSwapchainDependent()
+    {
+        vkDeviceWaitIdle(m_device);
+
+        // Destroy pass-owned resources that depend on renderpass/framebuffers
+        for (auto &p : m_passes)
+        {
+            if (p)
+                p->onDestroy(*m_ctx);
+        }
+
+        for (auto fb : m_framebuffers)
+        {
+            if (fb != VK_NULL_HANDLE)
+                vkDestroyFramebuffer(m_device, fb, nullptr);
+        }
+        m_framebuffers.clear();
+
+        destroyDepthResources();
+
+        if (m_mainRenderPass != VK_NULL_HANDLE)
+        {
+            vkDestroyRenderPass(m_device, m_mainRenderPass, nullptr);
+            m_mainRenderPass = VK_NULL_HANDLE;
+        }
+
+        // Swapchain itself has been recreated by caller.
+        m_swapchainImageFormat = m_swapchain->GetImageFormat();
+        m_extent = m_swapchain->GetExtent();
+
+        createDepthResources();
+        createMainRenderPass();
+        createFramebuffers();
+
+        for (auto &p : m_passes)
+        {
+            if (!p)
+                continue;
+            p->onResize(*m_ctx, m_extent);
+            p->onCreate(*m_ctx, m_mainRenderPass, m_framebuffers);
         }
     }
 
@@ -301,8 +500,8 @@ namespace Engine
         {
             // Window resized or swapchain invalid -> recreate and skip this frame
             m_swapchain->Recreate(m_extent);
-            // If m_framebuffers depend on swapchain, rebuild them here too.
-            // RebuildFramebuffers();
+            // Framebuffers/renderpass depend on swapchain.
+            recreateSwapchainDependent();
             return; // IMPORTANT: we did NOT reset the fence, so next frame’s wait will pass.
         }
         if (acquireRes != VK_SUCCESS && acquireRes != VK_SUBOPTIMAL_KHR)
@@ -320,8 +519,9 @@ namespace Engine
         vkBeginCommandBuffer(frame.commandBuffer, &beginInfo);
 
         // Begin render pass
-        VkClearValue clearColor{};
-        clearColor.color = {{0.02f, 0.02f, 0.04f, 1.0f}};
+        VkClearValue clears[2]{};
+        clears[0].color = {{0.02f, 0.02f, 0.04f, 1.0f}};
+        clears[1].depthStencil = {1.0f, 0};
 
         VkRenderPassBeginInfo rpBegin{};
         rpBegin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -329,8 +529,8 @@ namespace Engine
         rpBegin.framebuffer = m_framebuffers[imageIndex];
         rpBegin.renderArea.offset = {0, 0};
         rpBegin.renderArea.extent = m_extent;
-        rpBegin.clearValueCount = 1;
-        rpBegin.pClearValues = &clearColor;
+        rpBegin.clearValueCount = 2;
+        rpBegin.pClearValues = clears;
 
         vkCmdBeginRenderPass(frame.commandBuffer, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -345,7 +545,7 @@ namespace Engine
         vkEndCommandBuffer(frame.commandBuffer);
 
         // Submit to graphics queue
-        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT};
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.waitSemaphoreCount = 1;

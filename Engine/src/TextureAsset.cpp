@@ -3,6 +3,8 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
+#include <cmath>
 
 // ------------------------------------------------------------
 // stb_image decoding (PNG/JPG)
@@ -12,6 +14,14 @@
 
 namespace Engine
 {
+    static uint32_t calcMipLevels(uint32_t width, uint32_t height)
+    {
+        const uint32_t maxDim = std::max(width, height);
+        if (maxDim == 0)
+            return 1;
+        return static_cast<uint32_t>(std::floor(std::log2(static_cast<double>(maxDim)))) + 1u;
+    }
+
     bool TextureAsset::uploadRGBA8_Deferred(
         UploadContext &ctx,
         const uint8_t *rgbaPixels,
@@ -37,6 +47,7 @@ namespace Engine
 
         m_width = width;
         m_height = height;
+        m_mipLevels = calcMipLevels(width, height);
         m_format = srgbFormat ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
 
         const VkDeviceSize pixelBytes = VkDeviceSize(width) * VkDeviceSize(height) * 4u;
@@ -50,12 +61,13 @@ namespace Engine
         // Keep staging alive until EndSubmitAndWait
         ctx.pendingStaging.push_back(staging);
 
-        // 2) Create GPU image
+        // 2) Create GPU image (with mip levels)
         r = CreateImage2D(
             ctx.device, ctx.physicalDevice,
             width, height,
             m_format,
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            m_mipLevels,
             m_image, m_memory);
 
         if (r != VK_SUCCESS)
@@ -71,15 +83,41 @@ namespace Engine
 
         CmdCopyBufferToImage(ctx, staging.buffer, m_image, width, height);
 
-        CmdTransitionImageLayout(
-            ctx,
-            m_image,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_IMAGE_ASPECT_COLOR_BIT);
+        // 3b) Generate mipmaps if possible; otherwise just transition mip 0.
+        if (m_mipLevels > 1)
+        {
+            const bool okMips = CmdGenerateMipmaps(
+                ctx,
+                m_image,
+                m_format,
+                static_cast<int32_t>(width),
+                static_cast<int32_t>(height),
+                m_mipLevels);
+
+            if (!okMips)
+            {
+                // Fall back to no mips.
+                m_mipLevels = 1;
+                CmdTransitionImageLayout(
+                    ctx,
+                    m_image,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_IMAGE_ASPECT_COLOR_BIT);
+            }
+        }
+        else
+        {
+            CmdTransitionImageLayout(
+                ctx,
+                m_image,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_IMAGE_ASPECT_COLOR_BIT);
+        }
 
         // 4) Create view now (safe)
-        r = CreateImageView2D(ctx.device, m_image, m_format, VK_IMAGE_ASPECT_COLOR_BIT, m_view);
+        r = CreateImageView2D(ctx.device, m_image, m_format, VK_IMAGE_ASPECT_COLOR_BIT, m_mipLevels, m_view);
         if (r != VK_SUCCESS)
             return false;
 
@@ -93,6 +131,7 @@ namespace Engine
             magFilter,
             mipMode,
             maxAnisotropy,
+            static_cast<float>((m_mipLevels > 0) ? (m_mipLevels - 1) : 0),
             m_sampler);
 
         if (r != VK_SUCCESS)
@@ -178,6 +217,7 @@ namespace Engine
 
         m_width = 0;
         m_height = 0;
+        m_mipLevels = 1;
         m_format = VK_FORMAT_R8G8B8A8_UNORM;
     }
 

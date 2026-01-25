@@ -56,6 +56,7 @@ namespace Engine
         VkSampler getSampler() const { return m_sampler; }
         uint32_t getWidth() const { return m_width; }
         uint32_t getHeight() const { return m_height; }
+        uint32_t getMipLevels() const { return m_mipLevels; }
         VkFormat getFormat() const { return m_format; }
 
         bool isValid() const { return m_image != VK_NULL_HANDLE; }
@@ -68,6 +69,7 @@ namespace Engine
 
         uint32_t m_width = 0;
         uint32_t m_height = 0;
+        uint32_t m_mipLevels = 1;
         VkFormat m_format = VK_FORMAT_R8G8B8A8_UNORM;
     };
 

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <algorithm>
 
+const float TARGET = 5.0f; // Target size of models after scaling
 namespace Engine
 {
     // ------------------------------------------------------------
@@ -598,12 +599,12 @@ namespace Engine
             const float sizeZ = model->boundsMax[2] - model->boundsMin[2];
             const float maxExtent = std::max(sizeX, std::max(sizeY, sizeZ));
 
-            const float target = 20.0f;
+            const float target = TARGET;
             const float epsilon = 1e-4f;
             if (maxExtent > epsilon)
                 model->fitScale = target / maxExtent;
             else
-                model->fitScale = 1.0f;
+                model->fitScale = 4.0f;
         }
 
         // --------------------------
@@ -730,7 +731,7 @@ namespace Engine
                 const float sizeZ = model->boundsMax[2] - model->boundsMin[2];
                 const float maxExtent = std::max(sizeX, std::max(sizeY, sizeZ));
 
-                const float target = 20.0f;
+                const float target = TARGET;
                 const float epsilon = 1e-4f;
                 model->fitScale = (maxExtent > epsilon) ? (target / maxExtent) : 1.0f;
             }

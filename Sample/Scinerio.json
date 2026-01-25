@@ -87,7 +87,7 @@
             "id": "neutral_guard_mid",
             "team": "Neutral",
             "unitType": "HeavyInfantry",
-            "count": 12,
+            "count": 40,
             "anchor": "mid_bridge",
             "offset": {
                 "x": 0.0,
@@ -95,9 +95,10 @@
             },
             "facingYawDeg": 0.0,
             "formation": {
-                "kind": "circle",
-                "radius_m": 6.0,
-                "spacing_m": "auto"
+                "kind": "grid",
+                "columns": 8,
+                "spacing_m": 5,
+                "jitter_m": 0.05
             }
         }
     ]

@@ -815,6 +815,17 @@ namespace Engine
         // Dynamic viewport/scissor
         pci.dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
+        // Depth/stencil (main render pass has a depth attachment)
+        VkPipelineDepthStencilStateCreateInfo ds{};
+        ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        ds.depthTestEnable = VK_TRUE;
+        ds.depthWriteEnable = VK_TRUE;
+        ds.depthCompareOp = VK_COMPARE_OP_LESS;
+        ds.depthBoundsTestEnable = VK_FALSE;
+        ds.stencilTestEnable = VK_FALSE;
+        pci.depthStencil = ds;
+        pci.depthStencilProvided = true;
+
         // Pipelines: OPAQUE / MASK / BLEND (mask currently uses same state as opaque)
         VkPipelineColorBlendAttachmentState attOpaque{};
         VkPipelineColorBlendStateCreateInfo cbOpaque = makeBlendState(false, attOpaque);
@@ -832,6 +843,9 @@ namespace Engine
         VkPipelineColorBlendStateCreateInfo cbBlend = makeBlendState(true, attBlend);
         pci.colorBlend = cbBlend;
         pci.colorBlendProvided = true;
+
+        // Transparent: test depth but don't write
+        pci.depthStencil.depthWriteEnable = VK_FALSE;
         VkResult r2 = m_pipelineBlend.create(pci);
 
         // Cleanup shader modules
