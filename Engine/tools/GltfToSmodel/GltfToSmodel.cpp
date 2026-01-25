@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <cstring>
 #include <algorithm>
+#include <functional>
 
 // Your engine format header (adjust include path if needed)
 #include "assets/ModelFormat.h"
@@ -317,7 +318,16 @@ static LoadedImageBytes LoadTextureBytesFromAssimp(
 
 // ------------------------------------------------------------
 // Packing a single .smodel file:
-// [Header][Meshes][Primitives][Materials][Textures][StringTable][Blob]
+// V2 layout
+// [Header]
+// [Meshes]
+// [Primitives]
+// [Materials]
+// [Textures]
+// [Nodes]
+// [NodePrimitiveIndices]
+// [StringTable]
+// [Blob]
 // ------------------------------------------------------------
 template <typename T>
 static void WriteVector(std::ofstream &out, const std::vector<T> &v)
@@ -393,6 +403,8 @@ int main(int argc, char **argv)
     std::vector<sm::SModelPrimitiveRecord> primRecords;
     std::vector<sm::SModelMaterialRecord> materialRecords;
     std::vector<sm::SModelTextureRecord> textureRecords;
+    std::vector<sm::SModelNodeRecord> nodeRecords;
+    std::vector<uint32_t> nodePrimitiveIndices;
 
     // ------------------------------------------------------------
     // Texture dedup map
@@ -601,6 +613,9 @@ int main(int argc, char **argv)
 
         // glTF PBR
         AssignTextureIfPresent(aiTextureType_BASE_COLOR, true, mr.baseColorTexture);
+        // Some Assimp versions/materials map baseColor to DIFFUSE.
+        if (mr.baseColorTexture < 0)
+            AssignTextureIfPresent(aiTextureType_DIFFUSE, true, mr.baseColorTexture);
         AssignTextureIfPresent(aiTextureType_NORMALS, false, mr.normalTexture);
 
         // Metallic-roughness is not always mapped consistently in Assimp depending on version.
@@ -633,6 +648,8 @@ int main(int argc, char **argv)
     // ------------------------------------------------------------
     meshRecords.reserve(scene->mNumMeshes);
     primRecords.reserve(scene->mNumMeshes);
+
+    std::vector<int32_t> meshIndexToPrimIndex(scene->mNumMeshes, -1);
 
     for (uint32_t meshIdx = 0; meshIdx < scene->mNumMeshes; ++meshIdx)
     {
@@ -755,9 +772,83 @@ int main(int argc, char **argv)
         pr.vertexOffset = 0;
 
         primRecords.push_back(pr);
+        meshIndexToPrimIndex[meshIdx] = static_cast<int32_t>(primRecords.size() - 1);
     }
 
     // ------------------------------------------------------------
+    // Build node graph (DFS)
+    const uint32_t U32_MAX = ~0u;
+
+    auto ConvertAiToColumnMajor = [](const aiMatrix4x4 &m, float out[16])
+    {
+        // aiMatrix4x4 is row-major; write into column-major float array explicitly.
+        // Column 0
+        out[0] = m.a1;
+        out[1] = m.b1;
+        out[2] = m.c1;
+        out[3] = m.d1;
+        // Column 1
+        out[4] = m.a2;
+        out[5] = m.b2;
+        out[6] = m.c2;
+        out[7] = m.d2;
+        // Column 2
+        out[8] = m.a3;
+        out[9] = m.b3;
+        out[10] = m.c3;
+        out[11] = m.d3;
+        // Column 3 (translation in m.d1/m.d2/m.d3? Actually aiMatrix uses row-major with last column)
+        out[12] = m.a4;
+        out[13] = m.b4;
+        out[14] = m.c4;
+        out[15] = m.d4;
+    };
+
+    std::function<void(const aiNode *, uint32_t)> EmitNode = [&](const aiNode *n, uint32_t parentIndex)
+    {
+        if (!n)
+            return;
+
+        sm::SModelNodeRecord rec{};
+        rec.nameStrOffset = strings.add(n->mName.length > 0 ? std::string(n->mName.C_Str()) : std::string());
+        rec.parentIndex = (parentIndex == U32_MAX) ? U32_MAX : parentIndex;
+        rec.firstChild = U32_MAX;
+        rec.childCount = 0;
+        rec.firstPrimitiveIndex = static_cast<uint32_t>(nodePrimitiveIndices.size());
+        rec.primitiveCount = 0;
+        ConvertAiToColumnMajor(n->mTransformation, rec.localMatrix);
+
+        const uint32_t thisIndex = static_cast<uint32_t>(nodeRecords.size());
+        nodeRecords.push_back(rec);
+
+        // Append primitive indices for meshes under this node
+        for (unsigned mi = 0; mi < n->mNumMeshes; ++mi)
+        {
+            const unsigned aiMeshIdx = n->mMeshes[mi];
+            int32_t primIdx = (aiMeshIdx < meshIndexToPrimIndex.size()) ? meshIndexToPrimIndex[aiMeshIdx] : -1;
+            if (primIdx >= 0)
+            {
+                nodePrimitiveIndices.push_back(static_cast<uint32_t>(primIdx));
+                nodeRecords[thisIndex].primitiveCount++;
+            }
+        }
+
+        // Children
+        if (n->mNumChildren > 0)
+        {
+            nodeRecords[thisIndex].firstChild = static_cast<uint32_t>(nodeRecords.size());
+            for (unsigned ci = 0; ci < n->mNumChildren; ++ci)
+            {
+                const uint32_t childIndex = static_cast<uint32_t>(nodeRecords.size());
+                EmitNode(n->mChildren[ci], thisIndex);
+                (void)childIndex; // not used directly; DFS appends sequentially
+                nodeRecords[thisIndex].childCount++;
+            }
+        }
+    };
+
+    EmitNode(scene->mRootNode, U32_MAX);
+
     // Build header offsets
     // File layout:
     // Header
@@ -770,13 +861,15 @@ int main(int argc, char **argv)
     // ------------------------------------------------------------
     sm::SModelHeader header{};
     header.magic = sm::SMODEL_MAGIC;
-    header.versionMajor = 1;
+    header.versionMajor = 2;
     header.versionMinor = 0;
 
     header.meshCount = static_cast<uint32_t>(meshRecords.size());
     header.primitiveCount = static_cast<uint32_t>(primRecords.size());
     header.materialCount = static_cast<uint32_t>(materialRecords.size());
     header.textureCount = static_cast<uint32_t>(textureRecords.size());
+    header.nodeCount = static_cast<uint32_t>(nodeRecords.size());
+    header.nodePrimitiveIndexCount = static_cast<uint32_t>(nodePrimitiveIndices.size());
 
     uint64_t cursor = sizeof(sm::SModelHeader);
 
@@ -791,6 +884,14 @@ int main(int argc, char **argv)
 
     header.texturesOffset = cursor;
     cursor += uint64_t(textureRecords.size()) * sizeof(sm::SModelTextureRecord);
+
+    // Nodes
+    header.nodesOffset = cursor;
+    cursor += uint64_t(nodeRecords.size()) * sizeof(sm::SModelNodeRecord);
+
+    // Node primitive indices
+    header.nodePrimitiveIndicesOffset = cursor;
+    cursor += uint64_t(nodePrimitiveIndices.size()) * sizeof(uint32_t);
 
     header.stringTableOffset = cursor;
     header.stringTableSize = static_cast<uint32_t>(strings.data.size());
@@ -819,6 +920,8 @@ int main(int argc, char **argv)
     WriteVector(out, primRecords);
     WriteVector(out, materialRecords);
     WriteVector(out, textureRecords);
+    WriteVector(out, nodeRecords);
+    WriteVector(out, nodePrimitiveIndices);
     WriteChars(out, strings.data);
     WriteBytes(out, blob.bytes);
 
@@ -829,6 +932,8 @@ int main(int argc, char **argv)
     std::cout << "Primitives : " << header.primitiveCount << "\n";
     std::cout << "Materials  : " << header.materialCount << "\n";
     std::cout << "Textures   : " << header.textureCount << "\n";
+    std::cout << "Nodes      : " << header.nodeCount << "\n";
+    std::cout << "NodePrimIx : " << header.nodePrimitiveIndexCount << "\n";
     std::cout << "StringTable: " << header.stringTableSize << " bytes\n";
     std::cout << "Blob       : " << header.blobSize << " bytes\n";
     std::cout << "FileSize   : " << header.fileSizeBytes << " bytes\n";
