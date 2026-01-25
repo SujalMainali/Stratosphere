@@ -6,7 +6,7 @@ namespace Engine::smodel
 #pragma pack(push, 1)
 
     // ============================================================
-    // .smodel Header (V1)
+    // .smodel Header (V2)
     // ============================================================
     // The header contains:
     // - counts of record arrays
@@ -21,7 +21,7 @@ namespace Engine::smodel
     struct SModelHeader
     {
         uint32_t magic;        // must equal 'SMOD'
-        uint16_t versionMajor; // 1
+        uint16_t versionMajor; // 2
         uint16_t versionMinor; // 0
 
         uint32_t fileSizeBytes; // entire file size (validation)
@@ -32,14 +32,18 @@ namespace Engine::smodel
         uint32_t primitiveCount; // number of draw primitives (mesh+material)
         uint32_t materialCount;  // number of material records
         uint32_t textureCount;   // number of texture records
-
-        uint32_t reserved0;
+        // NEW: node graph
+        uint32_t nodeCount;               // number of node records
+        uint32_t nodePrimitiveIndexCount; // number of node->primitive index entries
 
         // Absolute offsets to record tables (from file start)
         uint64_t meshesOffset;
         uint64_t primitivesOffset;
         uint64_t materialsOffset;
         uint64_t texturesOffset;
+        // NEW: nodes + node primitive index table offsets
+        uint64_t nodesOffset;
+        uint64_t nodePrimitiveIndicesOffset;
 
         // Absolute offset to string table and blob section
         uint64_t stringTableOffset;
@@ -55,6 +59,6 @@ namespace Engine::smodel
 #pragma pack(pop)
 
     // Size must remain stable across tool/runtime.
-    static_assert(sizeof(SModelHeader) == 108, "SModelHeader size mismatch");
+    static_assert(sizeof(SModelHeader) == 128, "SModelHeader size mismatch");
 
 } // namespace Engine::smodel

@@ -26,6 +26,10 @@ namespace Engine::smodel
         const SModelMaterialRecord *materials = nullptr;
         const SModelTextureRecord *textures = nullptr;
 
+        // Node graph (V2)
+        const SModelNodeRecord *nodes = nullptr;
+        const uint32_t *nodePrimitiveIndices = nullptr;
+
         // String table start pointer (C-string table)
         const char *stringTable = nullptr;
 
@@ -37,6 +41,8 @@ namespace Engine::smodel
         uint32_t primitiveCount() const { return header ? header->primitiveCount : 0; }
         uint32_t materialCount() const { return header ? header->materialCount : 0; }
         uint32_t textureCount() const { return header ? header->textureCount : 0; }
+        uint32_t nodeCount() const { return header ? header->nodeCount : 0; }
+        uint32_t nodePrimitiveIndexCount() const { return header ? header->nodePrimitiveIndexCount : 0; }
 
         // Returns pointer to a null-terminated string in the string table.
         // Returns empty string if offset is 0 or invalid.

@@ -1,7 +1,7 @@
 #pragma once
 
 // ============================================================
-// Central include for .smodel v1 binary format structs
+// Central include for .smodel v2 binary format structs
 // ============================================================
 // You can include this one file from both:
 // - the cook tool (GltfToSmodel)
@@ -17,12 +17,13 @@
 #include "assets/model/SModelPrimitiveRecord.h"
 #include "assets/model/SModelTextureRecord.h"
 #include "assets/model/SModelMaterialRecord.h"
+#include "assets/model/SModelNodeRecord.h"
 namespace Engine::smodel
 {
     // 'SMOD' little-endian magic
     static constexpr uint32_t SMODEL_MAGIC = 0x444F4D53;
 
-    static constexpr uint16_t SMODEL_VERSION_MAJOR = 1;
+    static constexpr uint16_t SMODEL_VERSION_MAJOR = 2;
     static constexpr uint16_t SMODEL_VERSION_MINOR = 0;
 
     // Small helper for loader validation.
@@ -38,4 +39,4 @@ namespace Engine::smodel
         return true;
     }
 
-} // namespace stratos::assets::smodel_v1
+} // namespace Engine::smodel
