@@ -33,6 +33,37 @@ FetchContent_Declare(nlohmann_json
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
+# --- Dear ImGui via FetchContent ---
+FetchContent_Declare(
+  imgui
+  GIT_REPOSITORY https://github.com/ocornut/imgui.git
+  GIT_TAG v1.90.1
+)
+FetchContent_MakeAvailable(imgui)
+
+# Build ImGui as a static library with Vulkan + GLFW backends
+add_library(imgui_lib STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+)
+target_include_directories(imgui_lib PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+)
+target_link_libraries(imgui_lib PUBLIC Vulkan::Vulkan glfw)
+
+# Suppress warnings for imgui
+if (MSVC)
+    target_compile_options(imgui_lib PRIVATE /W0)
+else()
+    target_compile_options(imgui_lib PRIVATE -w)
+endif()
+
 # --- Engine target ---
 add_library(Engine STATIC
     src/Application.cpp
@@ -53,6 +84,8 @@ add_library(Engine STATIC
     src/SModelLoader.cpp
     src/SModelRenderPassModule.cpp
     src/TextureAsset.cpp
+    src/PerformanceMonitor.cpp
+    src/ImGuiLayer.cpp
 )
 
 # --- Shaders: compile GLSL -> SPIR-V (optional but recommended) ---
@@ -112,6 +145,7 @@ target_link_libraries(Engine
     PUBLIC
         Vulkan::Vulkan
         glm
+        imgui_lib
     PRIVATE
         glfw
         nlohmann_json::nlohmann_json

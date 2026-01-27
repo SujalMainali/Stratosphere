@@ -23,6 +23,7 @@ namespace Engine
         VkDevice GetDevice() const { return m_Device; }
         VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
         VkQueue GetPresentQueue() const { return m_PresentQueue; }
+        VkInstance GetInstance() const { return m_Instance; }
         uint32_t GetGraphicsQueueFamilyIndex() const { return m_SelectedDeviceInfo.queueFamilyIndices.graphicsFamily.value(); }
         SwapChain *GetSwapChain() const { return m_SwapChain.get(); }
 

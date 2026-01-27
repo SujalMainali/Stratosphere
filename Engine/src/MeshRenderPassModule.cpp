@@ -2,6 +2,7 @@
 #include "Engine/Pipeline.h"
 #include "Engine/VulkanContext.h"
 #include "Engine/SwapChain.h"
+#include "Engine/PerformanceMonitor.h"
 #include <stdexcept>
 #include <iostream>
 
@@ -162,6 +163,7 @@ namespace Engine
         vkCmdBindIndexBuffer(cmd, m_binding.indexBuffer, m_binding.indexOffset, m_binding.indexType);
 
         vkCmdDrawIndexed(cmd, m_binding.indexCount, 1, 0, 0, 0);
+        DrawCallCounter::increment();
     }
 
     void MeshRenderPassModule::onResize(VulkanContext &ctx, VkExtent2D newExtent)

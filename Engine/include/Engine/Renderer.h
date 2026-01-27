@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <memory>
+#include <functional>
 #include "Structs/FrameContextStruct.h"
 
 namespace Engine
@@ -44,6 +45,13 @@ namespace Engine
         VkRenderPass getMainRenderPass() const { return m_mainRenderPass; }
         VkExtent2D getExtent() const { return m_extent; }
 
+        // Set a callback for rendering ImGui (called after all render pass modules)
+        using ImGuiRenderCallback = std::function<void(VkCommandBuffer)>;
+        void setImGuiRenderCallback(ImGuiRenderCallback callback) { m_imguiRenderCallback = callback; }
+
+        // Get the last measured GPU frame time in milliseconds
+        float getGpuTimeMs() const { return m_gpuTimeMs; }
+
     private:
         VulkanContext *m_ctx = nullptr;
         SwapChain *m_swapchain = nullptr;
@@ -72,6 +80,15 @@ namespace Engine
         // Registered render-pass modules that will record into the main render pass.
         std::vector<std::shared_ptr<RenderPassModule>> m_passes;
 
+        // Optional ImGui render callback
+        ImGuiRenderCallback m_imguiRenderCallback;
+
+        // GPU timestamp query support
+        VkQueryPool m_timestampQueryPool = VK_NULL_HANDLE;
+        float m_timestampPeriod = 1.0f;  // Nanoseconds per timestamp tick
+        float m_gpuTimeMs = 0.0f;        // Last measured GPU time in milliseconds
+        bool m_timestampsSupported = false;
+
     private:
         // Create semaphores and fences for each frame slot (called during init).
         void createSyncObjects();
@@ -89,6 +106,10 @@ namespace Engine
 
         // Swapchain-dependent recreate helper
         void recreateSwapchainDependent();
+
+        // GPU timestamp helpers
+        void createTimestampQueryPool();
+        void destroyTimestampQueryPool();
     };
 
     class RenderPassModule

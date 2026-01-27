@@ -1,6 +1,7 @@
 #include "Engine/TrianglesRenderPassModule.h"
 #include "Engine/VulkanContext.h"
 #include "Engine/SwapChain.h"
+#include "Engine/PerformanceMonitor.h"
 #include "utils/BufferUtils.h"
 #include <stdexcept>
 #include <cstring>
@@ -86,6 +87,7 @@ namespace Engine
 
         const uint32_t instanceCount = (m_instances.instanceCount > 0 ? m_instances.instanceCount : 1);
         vkCmdDraw(cmd, m_binding.vertexCount, instanceCount, 0, 0);
+        DrawCallCounter::increment();
     }
 
     void TrianglesRenderPassModule::onDestroy(VulkanContext &ctx)

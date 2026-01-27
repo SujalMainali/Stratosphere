@@ -105,6 +105,7 @@ namespace Engine
         createFramebuffers();
         createSyncObjects();
         createCommandPoolsAndBuffers();
+        createTimestampQueryPool();
 
         // notify registered passes so they can create pipelines/resources that depend on renderpass/framebuffers
         for (auto &p : m_passes)
@@ -133,6 +134,7 @@ namespace Engine
         createFramebuffers();
         createSyncObjects();
         createCommandPoolsAndBuffers();
+        createTimestampQueryPool();
 
         // notify registered passes so they can create pipelines/resources that depend on renderpass/framebuffers
         for (auto &p : m_passes)
@@ -159,6 +161,7 @@ namespace Engine
                 p->onDestroy(*m_ctx);
         }
 
+        destroyTimestampQueryPool();
         destroyCommandPoolsAndBuffers();
         destroySyncObjects();
 
@@ -518,6 +521,16 @@ namespace Engine
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkBeginCommandBuffer(frame.commandBuffer, &beginInfo);
 
+        // GPU timestamp: reset queries for this frame
+        const uint32_t startQuery = m_currentFrame * 2;
+        const uint32_t endQuery = startQuery + 1;
+        if (m_timestampsSupported && m_timestampQueryPool != VK_NULL_HANDLE)
+        {
+            vkCmdResetQueryPool(frame.commandBuffer, m_timestampQueryPool, startQuery, 2);
+            // Write start timestamp (at top of pipe for earliest possible time)
+            vkCmdWriteTimestamp(frame.commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_timestampQueryPool, startQuery);
+        }
+
         // Begin render pass
         VkClearValue clears[2]{};
         clears[0].color = {{0.02f, 0.02f, 0.04f, 1.0f}};
@@ -541,7 +554,20 @@ namespace Engine
                 p->record(frame, frame.commandBuffer);
         }
 
+        // Render ImGui if callback is set
+        if (m_imguiRenderCallback)
+        {
+            m_imguiRenderCallback(frame.commandBuffer);
+        }
+
         vkCmdEndRenderPass(frame.commandBuffer);
+
+        // GPU timestamp: write end timestamp (at bottom of pipe for latest possible time)
+        if (m_timestampsSupported && m_timestampQueryPool != VK_NULL_HANDLE)
+        {
+            vkCmdWriteTimestamp(frame.commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_timestampQueryPool, endQuery);
+        }
+
         vkEndCommandBuffer(frame.commandBuffer);
 
         // Submit to graphics queue
@@ -558,6 +584,36 @@ namespace Engine
 
         vkResetFences(m_device, 1, &frame.inFlightFence);
         vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, frame.inFlightFence);
+
+        // Read GPU timestamp results from the PREVIOUS frame (which has definitely completed due to fence wait above)
+        // We read from the previous frame's queries since the current frame hasn't finished yet
+        if (m_timestampsSupported && m_timestampQueryPool != VK_NULL_HANDLE && m_maxFrames > 1)
+        {
+            // Calculate the previous frame's query indices
+            const uint32_t prevFrame = (m_currentFrame + m_maxFrames - 1) % m_maxFrames;
+            const uint32_t prevStartQuery = prevFrame * 2;
+            uint64_t timestamps[2] = {0, 0};
+            
+            VkResult queryResult = vkGetQueryPoolResults(
+                m_device,
+                m_timestampQueryPool,
+                prevStartQuery,
+                2,  // Query count
+                sizeof(timestamps),
+                timestamps,
+                sizeof(uint64_t),
+                VK_QUERY_RESULT_64_BIT
+            );
+
+            if (queryResult == VK_SUCCESS && timestamps[1] > timestamps[0])
+            {
+                // Calculate GPU time in milliseconds
+                // timestampPeriod is in nanoseconds per tick
+                const uint64_t ticksDelta = timestamps[1] - timestamps[0];
+                const float nanoseconds = static_cast<float>(ticksDelta) * m_timestampPeriod;
+                m_gpuTimeMs = nanoseconds / 1000000.0f;  // Convert ns to ms
+            }
+        }
 
         // Present
         VkPresentInfoKHR presentInfo{};
@@ -607,5 +663,46 @@ namespace Engine
                 f.commandBuffer = VK_NULL_HANDLE;
             }
         }
+    }
+
+    void Renderer::createTimestampQueryPool()
+    {
+        destroyTimestampQueryPool();
+
+        // Check if the device supports timestamps
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(m_ctx->GetPhysicalDevice(), &props);
+
+        if (props.limits.timestampComputeAndGraphics == VK_FALSE)
+        {
+            m_timestampsSupported = false;
+            return;
+        }
+
+        m_timestampPeriod = props.limits.timestampPeriod; // Nanoseconds per tick
+        m_timestampsSupported = true;
+
+        // Create a query pool with 2 queries per frame (start and end)
+        // We use 2 * maxFrames to have per-frame queries
+        VkQueryPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        poolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        poolInfo.queryCount = m_maxFrames * 2; // 2 timestamps per frame
+
+        if (vkCreateQueryPool(m_device, &poolInfo, nullptr, &m_timestampQueryPool) != VK_SUCCESS)
+        {
+            m_timestampsSupported = false;
+            m_timestampQueryPool = VK_NULL_HANDLE;
+        }
+    }
+
+    void Renderer::destroyTimestampQueryPool()
+    {
+        if (m_timestampQueryPool != VK_NULL_HANDLE)
+        {
+            vkDestroyQueryPool(m_device, m_timestampQueryPool, nullptr);
+            m_timestampQueryPool = VK_NULL_HANDLE;
+        }
+        m_timestampsSupported = false;
     }
 }

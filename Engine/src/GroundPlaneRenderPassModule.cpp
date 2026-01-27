@@ -2,6 +2,7 @@
 
 #include "Engine/VulkanContext.h"
 #include "Engine/SwapChain.h"
+#include "Engine/PerformanceMonitor.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -613,5 +614,6 @@ namespace Engine
         vkCmdBindVertexBuffers(cmd, 0, 2, vbs, offs);
         vkCmdBindIndexBuffer(cmd, m_planeIB.buffer, 0, VK_INDEX_TYPE_UINT16);
         vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+        DrawCallCounter::increment();
     }
 }

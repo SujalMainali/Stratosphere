@@ -1,6 +1,7 @@
 #include "Engine/SModelRenderPassModule.h"
 #include "Engine/VulkanContext.h"
 #include "Engine/SwapChain.h"
+#include "Engine/PerformanceMonitor.h"
 #include "assets/ModelAsset.h"
 #include "assets/MeshAsset.h"
 #include "assets/MaterialAsset.h"
@@ -1005,6 +1006,7 @@ namespace Engine
                         vkCmdBindIndexBuffer(cmd, ib, 0, mesh->getIndexType());
 
                         vkCmdDrawIndexed(cmd, prim.indexCount, instanceCount, prim.firstIndex, prim.vertexOffset, 0);
+                        DrawCallCounter::increment();
                     }
                 }
             }
@@ -1046,6 +1048,7 @@ namespace Engine
                     vkCmdBindIndexBuffer(cmd, ib, 0, mesh->getIndexType());
 
                     vkCmdDrawIndexed(cmd, prim.indexCount, instanceCount, prim.firstIndex, prim.vertexOffset, 0);
+                    DrawCallCounter::increment();
                 }
             }
         }
