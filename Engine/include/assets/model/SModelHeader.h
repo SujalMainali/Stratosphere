@@ -6,7 +6,7 @@ namespace Engine::smodel
 #pragma pack(push, 1)
 
     // ============================================================
-    // .smodel Header (V2.1)
+    // .smodel Header (V3.x)
     // ============================================================
     // The header contains:
     // - counts of record arrays
@@ -21,8 +21,8 @@ namespace Engine::smodel
     struct SModelHeader
     {
         uint32_t magic;        // must equal 'SMOD'
-        uint16_t versionMajor; // 2
-        uint16_t versionMinor; // 1
+        uint16_t versionMajor; // 3
+        uint16_t versionMinor; // 0
 
         uint32_t fileSizeBytes; // entire file size (validation)
         uint32_t flags;         // reserved for future use (0 for v1)
@@ -58,11 +58,27 @@ namespace Engine::smodel
         // Stored as uint32_t to preserve the header's fixed 128-byte size.
         uint32_t nodeChildIndicesOffset; // 0 if absent
         uint32_t nodeChildIndicesCount;  // number of uint32 entries
+
+        // NEW in v3.0: animation sections (optional; counts can be 0)
+        uint32_t animClipsOffset;
+        uint32_t animClipsCount;
+
+        uint32_t animChannelsOffset;
+        uint32_t animChannelsCount;
+
+        uint32_t animSamplersOffset;
+        uint32_t animSamplersCount;
+
+        uint32_t animTimesOffset; // float seconds
+        uint32_t animTimesCount;  // number of floats
+
+        uint32_t animValuesOffset; // float packed values
+        uint32_t animValuesCount;  // number of floats
     };
 
 #pragma pack(pop)
 
     // Size must remain stable across tool/runtime.
-    static_assert(sizeof(SModelHeader) == 128, "SModelHeader size mismatch");
+    static_assert(sizeof(SModelHeader) == 168, "SModelHeader size mismatch");
 
 } // namespace Engine::smodel

@@ -40,6 +40,18 @@ namespace Engine
             return true;
         }
 
+        template <typename T>
+        static const T *ptrAt(const uint8_t *base, uint64_t fileSize, uint64_t offset, uint64_t count, std::string &outError)
+        {
+            if (count == 0)
+                return nullptr;
+
+            if (!tableRangeValid<T>(offset, count, fileSize, outError))
+                return nullptr;
+
+            return reinterpret_cast<const T *>(base + offset);
+        }
+
         // ------------------------------------------------------------
         // SModelFileView helper
         // ------------------------------------------------------------
@@ -189,6 +201,33 @@ namespace Engine
                 }
             }
 
+            // V3: animation tables
+            if (outView.header->animClipsCount > 0)
+            {
+                if (!tableRangeValid<SModelAnimationClipRecord>(outView.header->animClipsOffset, outView.header->animClipsCount, uFileSize, outError))
+                    return false;
+            }
+            if (outView.header->animChannelsCount > 0)
+            {
+                if (!tableRangeValid<SModelAnimationChannelRecord>(outView.header->animChannelsOffset, outView.header->animChannelsCount, uFileSize, outError))
+                    return false;
+            }
+            if (outView.header->animSamplersCount > 0)
+            {
+                if (!tableRangeValid<SModelAnimationSamplerRecord>(outView.header->animSamplersOffset, outView.header->animSamplersCount, uFileSize, outError))
+                    return false;
+            }
+            if (outView.header->animTimesCount > 0)
+            {
+                if (!tableRangeValid<float>(outView.header->animTimesOffset, outView.header->animTimesCount, uFileSize, outError))
+                    return false;
+            }
+            if (outView.header->animValuesCount > 0)
+            {
+                if (!tableRangeValid<float>(outView.header->animValuesOffset, outView.header->animValuesCount, uFileSize, outError))
+                    return false;
+            }
+
             // --------------------------
             // Build pointers/views
             // --------------------------
@@ -215,6 +254,23 @@ namespace Engine
 
             outView.stringTable = reinterpret_cast<const char *>(base + outView.header->stringTableOffset);
             outView.blob = reinterpret_cast<const uint8_t *>(base + outView.header->blobOffset);
+
+            // V3: animation pointers (optional sections, counts may be 0)
+            outView.animClips = ptrAt<SModelAnimationClipRecord>(base, uFileSize, outView.header->animClipsOffset, outView.header->animClipsCount, outError);
+            if (!outError.empty())
+                return false;
+            outView.animChannels = ptrAt<SModelAnimationChannelRecord>(base, uFileSize, outView.header->animChannelsOffset, outView.header->animChannelsCount, outError);
+            if (!outError.empty())
+                return false;
+            outView.animSamplers = ptrAt<SModelAnimationSamplerRecord>(base, uFileSize, outView.header->animSamplersOffset, outView.header->animSamplersCount, outError);
+            if (!outError.empty())
+                return false;
+            outView.animTimes = ptrAt<float>(base, uFileSize, outView.header->animTimesOffset, outView.header->animTimesCount, outError);
+            if (!outError.empty())
+                return false;
+            outView.animValues = ptrAt<float>(base, uFileSize, outView.header->animValuesOffset, outView.header->animValuesCount, outError);
+            if (!outError.empty())
+                return false;
 
             // --------------------------
             // Validate record internal offsets (blob offsets)
@@ -391,6 +447,151 @@ namespace Engine
                                 return false;
                             }
                         }
+                    }
+                }
+            }
+
+            // V3: validate animation data (optional)
+            const uint32_t clipCount = outView.header->animClipsCount;
+            const uint32_t channelCount = outView.header->animChannelsCount;
+            const uint32_t samplerCount = outView.header->animSamplersCount;
+            const uint32_t timesCount = outView.header->animTimesCount;
+            const uint32_t valuesCount = outView.header->animValuesCount;
+
+            if (clipCount > 0 && outView.animClips == nullptr)
+            {
+                outError = "animClipsCount > 0 but animClips pointer is null";
+                return false;
+            }
+            if (channelCount > 0 && outView.animChannels == nullptr)
+            {
+                outError = "animChannelsCount > 0 but animChannels pointer is null";
+                return false;
+            }
+            if (samplerCount > 0 && outView.animSamplers == nullptr)
+            {
+                outError = "animSamplersCount > 0 but animSamplers pointer is null";
+                return false;
+            }
+            if (timesCount > 0 && outView.animTimes == nullptr)
+            {
+                outError = "animTimesCount > 0 but animTimes pointer is null";
+                return false;
+            }
+            if (valuesCount > 0 && outView.animValues == nullptr)
+            {
+                outError = "animValuesCount > 0 but animValues pointer is null";
+                return false;
+            }
+
+            auto isValidPath = [](uint16_t path)
+            {
+                return path == uint16_t(SModelAnimPath::Translation) || path == uint16_t(SModelAnimPath::Rotation) || path == uint16_t(SModelAnimPath::Scale);
+            };
+            auto isValidInterpolation = [](uint8_t interp)
+            {
+                return interp == uint8_t(SModelAnimInterpolation::Step) || interp == uint8_t(SModelAnimInterpolation::Linear) || interp == uint8_t(SModelAnimInterpolation::CubicSpline);
+            };
+            auto isValidValueType = [](uint8_t vt)
+            {
+                return vt == uint8_t(SModelAnimValueType::Vec3) || vt == uint8_t(SModelAnimValueType::Quat);
+            };
+
+            // Validate clips
+            for (uint32_t ci = 0; ci < clipCount; ++ci)
+            {
+                const SModelAnimationClipRecord &clip = outView.animClips[ci];
+
+                if (clip.durationSec < 0.0f)
+                {
+                    outError = "Animation clip durationSec < 0";
+                    return false;
+                }
+
+                if (clip.firstChannel + clip.channelCount > channelCount)
+                {
+                    outError = "Animation clip channel range out of bounds";
+                    return false;
+                }
+            }
+
+            // Validate channels (whole table)
+            for (uint32_t ch = 0; ch < channelCount; ++ch)
+            {
+                const SModelAnimationChannelRecord &chan = outView.animChannels[ch];
+
+                if (chan.targetNode >= outView.header->nodeCount)
+                {
+                    outError = "Animation channel targetNode out of bounds";
+                    return false;
+                }
+
+                if (chan.samplerIndex >= samplerCount)
+                {
+                    outError = "Animation channel samplerIndex out of bounds";
+                    return false;
+                }
+
+                if (!isValidPath(chan.path))
+                {
+                    outError = "Animation channel path is invalid";
+                    return false;
+                }
+            }
+
+            // Validate samplers
+            for (uint32_t si = 0; si < samplerCount; ++si)
+            {
+                const SModelAnimationSamplerRecord &s = outView.animSamplers[si];
+
+                if (s.timeCount < 1)
+                {
+                    outError = "Animation sampler timeCount < 1";
+                    return false;
+                }
+
+                if (s.firstTime + s.timeCount > timesCount)
+                {
+                    outError = "Animation sampler time range out of bounds";
+                    return false;
+                }
+
+                if (s.firstValue + s.valueCount > valuesCount)
+                {
+                    outError = "Animation sampler value range out of bounds";
+                    return false;
+                }
+
+                if (!isValidInterpolation(s.interpolation))
+                {
+                    outError = "Animation sampler interpolation is invalid";
+                    return false;
+                }
+
+                if (!isValidValueType(s.valueType))
+                {
+                    outError = "Animation sampler valueType is invalid";
+                    return false;
+                }
+
+                const uint64_t expected = (s.valueType == uint8_t(SModelAnimValueType::Vec3))
+                                              ? uint64_t(s.timeCount) * 3ull
+                                              : uint64_t(s.timeCount) * 4ull;
+
+                if (uint64_t(s.valueCount) != expected)
+                {
+                    outError = "Animation sampler valueCount does not match timeCount * valueWidth";
+                    return false;
+                }
+
+                // Helpful: ensure times are non-decreasing
+                const float *times = outView.animTimes + s.firstTime;
+                for (uint32_t ti = 1; ti < s.timeCount; ++ti)
+                {
+                    if (times[ti] < times[ti - 1])
+                    {
+                        outError = "Animation sampler times are not non-decreasing";
+                        return false;
                     }
                 }
             }

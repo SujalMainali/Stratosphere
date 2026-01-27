@@ -18,13 +18,16 @@
 #include "assets/model/SModelTextureRecord.h"
 #include "assets/model/SModelMaterialRecord.h"
 #include "assets/model/SModelNodeRecord.h"
+
+#include "assets/model/SModelAnimationRecords.h"
 namespace Engine::smodel
 {
     // 'SMOD' little-endian magic
     static constexpr uint32_t SMODEL_MAGIC = 0x444F4D53;
 
-    static constexpr uint16_t SMODEL_VERSION_MAJOR = 2;
-    static constexpr uint16_t SMODEL_VERSION_MINOR = 1;
+    // Current (and only supported) runtime version.
+    static constexpr uint16_t SMODEL_VERSION_MAJOR = 3;
+    static constexpr uint16_t SMODEL_VERSION_MINOR = 0;
 
     // Small helper for loader validation.
     // If this returns false, loader should reject the file.
@@ -32,16 +35,15 @@ namespace Engine::smodel
     {
         if (h.magic != SMODEL_MAGIC)
             return false;
+
+        // Only accept v3+. (Project policy: all assets are recooked to latest.)
         if (h.versionMajor != SMODEL_VERSION_MAJOR)
             return false;
 
-        // v2.1 introduced nodeChildIndices[] and changed node child semantics.
-        // Treat v2.0 as incompatible.
+        // Minor can be forward-compatible.
         if (h.versionMinor < SMODEL_VERSION_MINOR)
             return false;
 
-        // Minor can be forward-compatible.
         return true;
     }
-
 } // namespace Engine::smodel

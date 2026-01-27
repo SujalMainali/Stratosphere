@@ -876,8 +876,8 @@ int main(int argc, char **argv)
     // ------------------------------------------------------------
     sm::SModelHeader header{};
     header.magic = sm::SMODEL_MAGIC;
-    header.versionMajor = 2;
-    header.versionMinor = 1;
+    header.versionMajor = 3;
+    header.versionMinor = 0;
 
     header.meshCount = static_cast<uint32_t>(meshRecords.size());
     header.primitiveCount = static_cast<uint32_t>(primRecords.size());
@@ -886,6 +886,19 @@ int main(int argc, char **argv)
     header.nodeCount = static_cast<uint32_t>(nodeRecords.size());
     header.nodePrimitiveIndexCount = static_cast<uint32_t>(nodePrimitiveIndices.size());
     header.nodeChildIndicesCount = static_cast<uint32_t>(nodeChildIndices.size());
+
+    // Animations are not emitted yet in this iteration.
+    // Keeping these as 0 makes the loader treat the file as having no animations.
+    header.animClipsOffset = 0;
+    header.animClipsCount = 0;
+    header.animChannelsOffset = 0;
+    header.animChannelsCount = 0;
+    header.animSamplersOffset = 0;
+    header.animSamplersCount = 0;
+    header.animTimesOffset = 0;
+    header.animTimesCount = 0;
+    header.animValuesOffset = 0;
+    header.animValuesCount = 0;
 
     uint64_t cursor = sizeof(sm::SModelHeader);
 
@@ -914,11 +927,11 @@ int main(int argc, char **argv)
     cursor += uint64_t(nodeChildIndices.size()) * sizeof(uint32_t);
 
     header.stringTableOffset = cursor;
-    header.stringTableSize = static_cast<uint32_t>(strings.data.size());
+    header.stringTableSize = static_cast<uint64_t>(strings.data.size());
     cursor += strings.data.size();
 
     header.blobOffset = cursor;
-    header.blobSize = static_cast<uint32_t>(blob.bytes.size());
+    header.blobSize = static_cast<uint64_t>(blob.bytes.size());
     cursor += blob.bytes.size();
 
     header.fileSizeBytes = static_cast<uint32_t>(cursor);

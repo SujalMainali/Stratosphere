@@ -31,6 +31,13 @@ namespace Engine::smodel
         const uint32_t *nodePrimitiveIndices = nullptr;
         const uint32_t *nodeChildIndices = nullptr;
 
+        // Animation (V3)
+        const SModelAnimationClipRecord *animClips = nullptr;
+        const SModelAnimationChannelRecord *animChannels = nullptr;
+        const SModelAnimationSamplerRecord *animSamplers = nullptr;
+        const float *animTimes = nullptr;
+        const float *animValues = nullptr;
+
         // String table start pointer (C-string table)
         const char *stringTable = nullptr;
 
@@ -45,6 +52,37 @@ namespace Engine::smodel
         uint32_t nodeCount() const { return header ? header->nodeCount : 0; }
         uint32_t nodePrimitiveIndexCount() const { return header ? header->nodePrimitiveIndexCount : 0; }
         uint32_t nodeChildIndexCount() const { return header ? header->nodeChildIndicesCount : 0; }
+
+        uint32_t animClipCount() const
+        {
+            if (!header || header->versionMajor < 3)
+                return 0;
+            return header->animClipsCount;
+        }
+        uint32_t animChannelCount() const
+        {
+            if (!header || header->versionMajor < 3)
+                return 0;
+            return header->animChannelsCount;
+        }
+        uint32_t animSamplerCount() const
+        {
+            if (!header || header->versionMajor < 3)
+                return 0;
+            return header->animSamplersCount;
+        }
+        uint32_t animTimesCount() const
+        {
+            if (!header || header->versionMajor < 3)
+                return 0;
+            return header->animTimesCount;
+        }
+        uint32_t animValuesCount() const
+        {
+            if (!header || header->versionMajor < 3)
+                return 0;
+            return header->animValuesCount;
+        }
 
         // Returns pointer to a null-terminated string in the string table.
         // Returns empty string if offset is 0 or invalid.
