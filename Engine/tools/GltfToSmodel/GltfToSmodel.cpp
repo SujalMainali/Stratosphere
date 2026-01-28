@@ -130,19 +130,21 @@ struct Blob
 // location 2: vec2 uv0
 // location 3: vec4 tangent
 // ------------------------------------------------------------
-struct VertexPNTT
+struct VertexPNTTJW
 {
     float pos[3];
     float normal[3];
     float uv0[2];
     float tangent[4];
+    uint16_t joints[4];
+    float weights[4];
 };
-static_assert(sizeof(VertexPNTT) == 48, "VertexPNTT expected to be 48 bytes");
+static_assert(sizeof(VertexPNTTJW) == 72, "VertexPNTTJW expected to be 72 bytes");
 
 // ------------------------------------------------------------
 // AABB compute
 // ------------------------------------------------------------
-static void ComputeAABB(const std::vector<VertexPNTT> &v, float outMin[3], float outMax[3])
+static void ComputeAABB(const std::vector<VertexPNTTJW> &v, float outMin[3], float outMax[3])
 {
     if (v.empty())
     {
@@ -165,6 +167,34 @@ static void ComputeAABB(const std::vector<VertexPNTT> &v, float outMin[3], float
         outMax[1] = std::max(outMax[1], vx.pos[1]);
         outMax[2] = std::max(outMax[2], vx.pos[2]);
     }
+}
+
+// ------------------------------------------------------------
+// Assimp matrix conversion
+// aiMatrix4x4 is row-major; runtime expects column-major float arrays.
+// ------------------------------------------------------------
+static void AiMatToColumnMajor(const aiMatrix4x4 &m, float out[16])
+{
+    // Column 0
+    out[0] = m.a1;
+    out[1] = m.b1;
+    out[2] = m.c1;
+    out[3] = m.d1;
+    // Column 1
+    out[4] = m.a2;
+    out[5] = m.b2;
+    out[6] = m.c2;
+    out[7] = m.d2;
+    // Column 2
+    out[8] = m.a3;
+    out[9] = m.b3;
+    out[10] = m.c3;
+    out[11] = m.d3;
+    // Column 3
+    out[12] = m.a4;
+    out[13] = m.b4;
+    out[14] = m.c4;
+    out[15] = m.d4;
 }
 
 // ------------------------------------------------------------
@@ -484,6 +514,19 @@ int main(int argc, char **argv)
     std::vector<float> animTimes;  // seconds
     std::vector<float> animValues; // packed floats (vec3/quats)
 
+    // Skinning (V4)
+    struct TmpSkin
+    {
+        std::string name;
+        std::vector<std::string> jointNodeNames; // resolved to node indices after node table is built
+        std::vector<float> inverseBindMatrices;  // mat4 array packed as floats (16 floats per joint)
+    };
+
+    std::vector<TmpSkin> tmpSkins;
+    std::vector<sm::SModelSkinRecord> skinRecords;
+    std::vector<uint32_t> skinJointNodeIndices;
+    std::vector<float> skinInverseBindMatrices;
+
     // ------------------------------------------------------------
     // Texture dedup map
     // key = resolved path or "*0"
@@ -735,13 +778,71 @@ int main(int argc, char **argv)
         if (!mesh)
             continue;
 
+        int32_t skinIndex = -1;
+
+        // If this mesh has bones, build per-vertex joint/weight data and a TmpSkin.
+        std::vector<std::vector<std::pair<uint16_t, float>>> influences; // per vertex: (jointIx, weight)
+        if (mesh->HasBones() && mesh->mNumBones > 0)
+        {
+            TmpSkin skin;
+            skin.name = (mesh->mName.length > 0) ? std::string(mesh->mName.C_Str()) + "_skin" : ("skin_" + std::to_string(meshIdx));
+            skin.jointNodeNames.reserve(mesh->mNumBones);
+            skin.inverseBindMatrices.reserve(size_t(mesh->mNumBones) * 16u);
+
+            influences.resize(mesh->mNumVertices);
+
+            // bone name -> joint index in this skin
+            std::unordered_map<std::string, uint16_t> boneNameToJoint;
+            boneNameToJoint.reserve(mesh->mNumBones);
+
+            for (uint32_t bi = 0; bi < mesh->mNumBones; ++bi)
+            {
+                const aiBone *bone = mesh->mBones[bi];
+                if (!bone)
+                    continue;
+
+                const std::string boneName = (bone->mName.length > 0) ? std::string(bone->mName.C_Str()) : ("bone_" + std::to_string(bi));
+
+                uint16_t jointIx = 0;
+                auto it = boneNameToJoint.find(boneName);
+                if (it == boneNameToJoint.end())
+                {
+                    jointIx = static_cast<uint16_t>(skin.jointNodeNames.size());
+                    boneNameToJoint.emplace(boneName, jointIx);
+                    skin.jointNodeNames.push_back(boneName);
+
+                    float ibm[16];
+                    AiMatToColumnMajor(bone->mOffsetMatrix, ibm);
+                    skin.inverseBindMatrices.insert(skin.inverseBindMatrices.end(), ibm, ibm + 16);
+                }
+                else
+                {
+                    jointIx = it->second;
+                }
+
+                for (uint32_t wi = 0; wi < bone->mNumWeights; ++wi)
+                {
+                    const aiVertexWeight &w = bone->mWeights[wi];
+                    if (w.mVertexId >= mesh->mNumVertices)
+                        continue;
+                    if (w.mWeight <= 0.0f)
+                        continue;
+
+                    influences[w.mVertexId].push_back({jointIx, w.mWeight});
+                }
+            }
+
+            skinIndex = static_cast<int32_t>(tmpSkins.size());
+            tmpSkins.push_back(std::move(skin));
+        }
+
         // Build vertex array
-        std::vector<VertexPNTT> vertices;
+        std::vector<VertexPNTTJW> vertices;
         vertices.resize(mesh->mNumVertices);
 
         for (uint32_t vi = 0; vi < mesh->mNumVertices; ++vi)
         {
-            VertexPNTT v{};
+            VertexPNTTJW v{};
 
             // Position
             v.pos[0] = mesh->mVertices[vi].x;
@@ -790,6 +891,32 @@ int main(int argc, char **argv)
                 v.tangent[3] = 1;
             }
 
+            // Skinning (up to 4 weights)
+            if (skinIndex >= 0 && vi < influences.size())
+            {
+                auto &inf = influences[vi];
+                if (!inf.empty())
+                {
+                    std::sort(inf.begin(), inf.end(), [](const auto &a, const auto &b)
+                              { return a.second > b.second; });
+
+                    float sum = 0.0f;
+                    const uint32_t take = std::min<uint32_t>(4u, static_cast<uint32_t>(inf.size()));
+                    for (uint32_t i = 0; i < take; ++i)
+                    {
+                        v.joints[i] = inf[i].first;
+                        v.weights[i] = inf[i].second;
+                        sum += inf[i].second;
+                    }
+
+                    if (sum > 0.0f)
+                    {
+                        for (uint32_t i = 0; i < take; ++i)
+                            v.weights[i] /= sum;
+                    }
+                }
+            }
+
             vertices[vi] = v;
         }
 
@@ -817,11 +944,11 @@ int main(int argc, char **argv)
 
         mr.vertexCount = static_cast<uint32_t>(vertices.size());
         mr.indexCount = static_cast<uint32_t>(indices.size());
-        mr.vertexStride = static_cast<uint32_t>(sizeof(VertexPNTT));
+        mr.vertexStride = static_cast<uint32_t>(sizeof(VertexPNTTJW));
 
         // layout flags should match your enum in ModelFormats.h
         // If your enum differs, update accordingly.
-        mr.layoutFlags = sm::VTX_POS | sm::VTX_NORMAL | sm::VTX_UV0 | sm::VTX_TANGENT;
+        mr.layoutFlags = sm::VTX_POS | sm::VTX_NORMAL | sm::VTX_UV0 | sm::VTX_TANGENT | sm::VTX_JOINTS | sm::VTX_WEIGHTS;
 
         // Indices are always U32 in phase 1
         mr.indexType = 1; // assume 1=U32 (match your IndexType enum if different)
@@ -831,8 +958,8 @@ int main(int argc, char **argv)
 
         // Store vertex/index bytes in blob
         blob.align(8);
-        mr.vertexDataOffset = blob.append(vertices.data(), vertices.size() * sizeof(VertexPNTT));
-        mr.vertexDataSize = static_cast<uint32_t>(vertices.size() * sizeof(VertexPNTT));
+        mr.vertexDataOffset = blob.append(vertices.data(), vertices.size() * sizeof(VertexPNTTJW));
+        mr.vertexDataSize = static_cast<uint32_t>(vertices.size() * sizeof(VertexPNTTJW));
 
         blob.align(8);
         mr.indexDataOffset = blob.append(indices.data(), indices.size() * sizeof(uint32_t));
@@ -848,6 +975,7 @@ int main(int argc, char **argv)
         pr.firstIndex = 0;
         pr.indexCount = mr.indexCount;
         pr.vertexOffset = 0;
+        pr.skinIndex = skinIndex;
 
         primRecords.push_back(pr);
         meshIndexToPrimIndex[meshIdx] = static_cast<int32_t>(primRecords.size() - 1);
@@ -859,31 +987,6 @@ int main(int argc, char **argv)
 
     // Assimp animation channels target nodes by name
     std::unordered_map<std::string, uint32_t> nodeNameToIndex;
-
-    auto ConvertAiToColumnMajor = [](const aiMatrix4x4 &m, float out[16])
-    {
-        // aiMatrix4x4 is row-major; write into column-major float array explicitly.
-        // Column 0
-        out[0] = m.a1;
-        out[1] = m.b1;
-        out[2] = m.c1;
-        out[3] = m.d1;
-        // Column 1
-        out[4] = m.a2;
-        out[5] = m.b2;
-        out[6] = m.c2;
-        out[7] = m.d2;
-        // Column 2
-        out[8] = m.a3;
-        out[9] = m.b3;
-        out[10] = m.c3;
-        out[11] = m.d3;
-        // Column 3 (translation in m.d1/m.d2/m.d3? Actually aiMatrix uses row-major with last column)
-        out[12] = m.a4;
-        out[13] = m.b4;
-        out[14] = m.c4;
-        out[15] = m.d4;
-    };
 
     std::function<uint32_t(const aiNode *, uint32_t)> EmitNode = [&](const aiNode *n, uint32_t parentIndex) -> uint32_t
     {
@@ -902,7 +1005,7 @@ int main(int argc, char **argv)
 
         rec.firstPrimitiveIndex = static_cast<uint32_t>(nodePrimitiveIndices.size());
         rec.primitiveCount = 0;
-        ConvertAiToColumnMajor(n->mTransformation, rec.localMatrix);
+        AiMatToColumnMajor(n->mTransformation, rec.localMatrix);
 
         // Append primitive indices for meshes under this node
         for (unsigned mi = 0; mi < n->mNumMeshes; ++mi)
@@ -946,6 +1049,37 @@ int main(int argc, char **argv)
     };
 
     (void)EmitNode(scene->mRootNode, U32_MAX);
+
+    // ------------------------------------------------------------
+    // Finalize skin tables (resolve joint node names -> node indices)
+    // ------------------------------------------------------------
+    skinRecords.clear();
+    skinJointNodeIndices.clear();
+    skinInverseBindMatrices.clear();
+
+    skinRecords.reserve(tmpSkins.size());
+    for (const TmpSkin &skin : tmpSkins)
+    {
+        sm::SModelSkinRecord rec{};
+        rec.nameStrOffset = strings.add(skin.name);
+        rec.jointCount = static_cast<uint32_t>(skin.jointNodeNames.size());
+        rec.firstJointNodeIndex = static_cast<uint32_t>(skinJointNodeIndices.size());
+        rec.firstInverseBindMatrix = static_cast<uint32_t>(skinInverseBindMatrices.size());
+
+        for (const std::string &jointName : skin.jointNodeNames)
+        {
+            auto it = nodeNameToIndex.find(jointName);
+            if (it == nodeNameToIndex.end())
+            {
+                std::cout << "Skin joint node not found in node table: '" << jointName << "'\n";
+                return 2;
+            }
+            skinJointNodeIndices.push_back(it->second);
+        }
+
+        skinInverseBindMatrices.insert(skinInverseBindMatrices.end(), skin.inverseBindMatrices.begin(), skin.inverseBindMatrices.end());
+        skinRecords.push_back(rec);
+    }
 
     // ------------------------------------------------------------
     // Build animation tables (node TRS only)
@@ -1068,12 +1202,19 @@ int main(int argc, char **argv)
     // PrimitiveRecords
     // MaterialRecords
     // TextureRecords
+    // NodeRecords
+    // NodePrimitiveIndices
+    // NodeChildIndices
+    // SkinRecords
+    // SkinJointNodeIndices
+    // SkinInverseBindMatrices
+    // Anim*
     // StringTable
     // Blob
     // ------------------------------------------------------------
     sm::SModelHeader header{};
     header.magic = sm::SMODEL_MAGIC;
-    header.versionMajor = 3;
+    header.versionMajor = 4;
     header.versionMinor = 0;
 
     header.meshCount = static_cast<uint32_t>(meshRecords.size());
@@ -1083,6 +1224,10 @@ int main(int argc, char **argv)
     header.nodeCount = static_cast<uint32_t>(nodeRecords.size());
     header.nodePrimitiveIndexCount = static_cast<uint32_t>(nodePrimitiveIndices.size());
     header.nodeChildIndicesCount = static_cast<uint32_t>(nodeChildIndices.size());
+
+    header.skinCount = static_cast<uint32_t>(skinRecords.size());
+    header.skinJointNodeIndicesCount = static_cast<uint32_t>(skinJointNodeIndices.size());
+    header.skinInverseBindMatricesCount = static_cast<uint32_t>(skinInverseBindMatrices.size());
     header.animClipsCount = static_cast<uint32_t>(animClips.size());
     header.animChannelsCount = static_cast<uint32_t>(animChannels.size());
     header.animSamplersCount = static_cast<uint32_t>(animSamplers.size());
@@ -1114,6 +1259,16 @@ int main(int argc, char **argv)
     // Node child indices
     header.nodeChildIndicesOffset = static_cast<uint32_t>(cursor);
     cursor += uint64_t(nodeChildIndices.size()) * sizeof(uint32_t);
+
+    // Skins (V4)
+    header.skinsOffset = static_cast<uint32_t>(cursor);
+    cursor += uint64_t(skinRecords.size()) * sizeof(sm::SModelSkinRecord);
+
+    header.skinJointNodeIndicesOffset = static_cast<uint32_t>(cursor);
+    cursor += uint64_t(skinJointNodeIndices.size()) * sizeof(uint32_t);
+
+    header.skinInverseBindMatricesOffset = static_cast<uint32_t>(cursor);
+    cursor += uint64_t(skinInverseBindMatrices.size()) * sizeof(float);
 
     // Animations
     header.animClipsOffset = static_cast<uint32_t>(cursor);
@@ -1161,6 +1316,9 @@ int main(int argc, char **argv)
     WriteVector(out, nodeRecords);
     WriteVector(out, nodePrimitiveIndices);
     WriteVector(out, nodeChildIndices);
+    WriteVector(out, skinRecords);
+    WriteVector(out, skinJointNodeIndices);
+    WriteVector(out, skinInverseBindMatrices);
     WriteVector(out, animClips);
     WriteVector(out, animChannels);
     WriteVector(out, animSamplers);
@@ -1178,6 +1336,7 @@ int main(int argc, char **argv)
     std::cout << "Textures   : " << header.textureCount << "\n";
     std::cout << "Nodes      : " << header.nodeCount << "\n";
     std::cout << "NodePrimIx : " << header.nodePrimitiveIndexCount << "\n";
+    std::cout << "Skins      : " << header.skinCount << "\n";
     std::cout << "AnimClips  : " << header.animClipsCount << "\n";
     std::cout << "AnimChans  : " << header.animChannelsCount << "\n";
     std::cout << "AnimSamplers: " << header.animSamplersCount << "\n";

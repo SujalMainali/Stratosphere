@@ -228,6 +228,26 @@ namespace Engine
                     return false;
             }
 
+            // V4: skinning tables
+            if (outView.header->versionMajor >= 4)
+            {
+                if (outView.header->skinCount > 0)
+                {
+                    if (!tableRangeValid<SModelSkinRecord>(outView.header->skinsOffset, outView.header->skinCount, uFileSize, outError))
+                        return false;
+                }
+                if (outView.header->skinJointNodeIndicesCount > 0)
+                {
+                    if (!tableRangeValid<uint32_t>(outView.header->skinJointNodeIndicesOffset, outView.header->skinJointNodeIndicesCount, uFileSize, outError))
+                        return false;
+                }
+                if (outView.header->skinInverseBindMatricesCount > 0)
+                {
+                    if (!tableRangeValid<float>(outView.header->skinInverseBindMatricesOffset, outView.header->skinInverseBindMatricesCount, uFileSize, outError))
+                        return false;
+                }
+            }
+
             // --------------------------
             // Build pointers/views
             // --------------------------
@@ -271,6 +291,20 @@ namespace Engine
             outView.animValues = ptrAt<float>(base, uFileSize, outView.header->animValuesOffset, outView.header->animValuesCount, outError);
             if (!outError.empty())
                 return false;
+
+            // V4: skin pointers (optional sections)
+            if (outView.header->versionMajor >= 4)
+            {
+                outView.skins = ptrAt<SModelSkinRecord>(base, uFileSize, outView.header->skinsOffset, outView.header->skinCount, outError);
+                if (!outError.empty())
+                    return false;
+                outView.skinJointNodeIndices = ptrAt<uint32_t>(base, uFileSize, outView.header->skinJointNodeIndicesOffset, outView.header->skinJointNodeIndicesCount, outError);
+                if (!outError.empty())
+                    return false;
+                outView.skinInverseBindMatrices = ptrAt<float>(base, uFileSize, outView.header->skinInverseBindMatricesOffset, outView.header->skinInverseBindMatricesCount, outError);
+                if (!outError.empty())
+                    return false;
+            }
 
             // --------------------------
             // Validate record internal offsets (blob offsets)
