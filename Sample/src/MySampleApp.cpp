@@ -382,6 +382,14 @@ void MySampleApp::OnRender()
 {
     // Rendering handled by Renderer/Engine.
      // If ImGui frame active, draw the menu. (Application's Run begins an ImGui frame before OnRender.)
+         // Apply fade-in effect to game world rendering
+    if (m_menu.IsFadingToGame())
+    {
+        float alpha = m_menu.GetGameAlpha();
+        // Apply alpha to your render pass or use a post-process overlay
+        // Example: render a black quad with inverse alpha over everything
+        // or multiply your fragment shader output by alpha
+    }
     m_menu.OnImGuiFrame();
 
     // If menu produced a result, handle it
@@ -392,14 +400,13 @@ void MySampleApp::OnRender()
 
         if (res == MenuManager::Result::NewGame)
         {
-            // Start a fresh game: clear any previous save
             std::remove(m_saveFilePath.c_str());
             m_menu.SetHasSaveFile(false);
-
-            // Hide menu with fade and continue normal loop
-            m_menu.Hide();
-            // optionally reset game state (camera etc)
-            // Example: reset camera defaults done in constructor already
+    
+            // Start fade-in effect instead of just hiding
+            m_menu.StartGameFadeIn();
+    
+            // optionally reset game state
         }
         else if (res == MenuManager::Result::ContinueGame)
         {
@@ -409,7 +416,7 @@ void MySampleApp::OnRender()
         }
         else if (res == MenuManager::Result::Exit)
         {
-            Close(); // Application::Close will stop the loop and cleanup
+            std::exit(0);  // Quick exit - no GPU wait, immediate termination
         }
     }
 }

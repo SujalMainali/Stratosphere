@@ -63,6 +63,7 @@ if (STRATO_PROCESS_SAMPLE_GLTF)
         set(OUT_FILE ${OUT_DIR}/${BASE_NAME}.smodel)
 
         add_custom_command(
+ 
             OUTPUT ${OUT_FILE}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${OUT_DIR}
             COMMAND GltfToSmodelTool
@@ -73,6 +74,18 @@ if (STRATO_PROCESS_SAMPLE_GLTF)
             COMMENT "Cooking GLTF -> SMODEL: ${REL_PATH}"
             VERBATIM
         )
+
+
+        # Copy raw assets (PNG images for menu buttons, etc.) to runtime output
+        add_custom_command(TARGET SampleApp POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+            $<TARGET_FILE_DIR:SampleApp>/assets/raw
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/Sample/assets/raw
+            $<TARGET_FILE_DIR:SampleApp>/assets/raw
+            COMMENT "Copying raw assets (images) to runtime output"
+        )
+
 
         list(APPEND SAMPLE_COOKED_SMODEL_OUTPUTS ${OUT_FILE})
 

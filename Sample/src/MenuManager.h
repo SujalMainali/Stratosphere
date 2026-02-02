@@ -53,6 +53,17 @@ public:
     void Hide() { m_show = false; m_timeSinceShown = 0.0f; }
     bool IsVisible() const { return m_show; }
 
+        void StartGameFadeIn() 
+    { 
+        m_show = false;
+        m_fadingToGame = true;
+        m_timeSinceShown = 0.0f;
+        m_gameAlpha = 0.0f;
+    }
+    
+    float GetGameAlpha() const { return m_fadingToGame ? m_gameAlpha : 1.0f; }
+    bool IsFadingToGame() const { return m_fadingToGame; }
+
 private:
     void handleInput();
     void drawMenu();
@@ -68,6 +79,8 @@ private:
     float m_timeSinceShown = 0.0f;
     float m_fadeDuration = 0.4f; // seconds
     float m_alpha = 1.0f;
+        bool m_fadingToGame = false;
+    float m_gameAlpha = 0.0f;  // Controls fade-in of the game world
 
     Result m_result = Result::None;
 };
