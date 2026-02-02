@@ -2,7 +2,6 @@
 
 #include <imgui.h>
 #include <chrono>
-#include <iostream>
 
 namespace
 {
@@ -16,16 +15,16 @@ namespace
     }
 }
 
-MenuManager::MenuManager()  //Initialize members
+MenuManager::MenuManager()
 {
-    m_selected = 0;     //start with first button selected
-    m_show = true;      //show menu by default
-    m_timeSinceShown = 0.0f;        //time to show 
-    m_alpha = 1.0f;     //fully opaque
-    m_hasSaveFile = false;      //assumes no save file
+    m_selected = 0;
+    m_show = true;
+    m_timeSinceShown = 0.0f;
+    m_alpha = 1.0f;
+    m_hasSaveFile = false;
 }
 
-void MenuManager::SetTextureLoader(TextureLoaderFn loader)   //Texture loader function
+void MenuManager::SetTextureLoader(TextureLoaderFn loader)
 {
     m_loader = loader;
     if (m_loader)
@@ -33,41 +32,14 @@ void MenuManager::SetTextureLoader(TextureLoaderFn loader)   //Texture loader fu
         // Attempt to load (non-fatal if missing)
         try
         {
-            std::cout << "[MenuManager] Attempting to load button textures..." << std::endl;
-            
-            m_background = nullptr; // Don't load background(Rendering Phase C)
-            
+            m_background = m_loader("assets/raw/menu.png");
             m_tex[0] = m_loader("assets/raw/newgame.png");
-            if (m_tex[0]) {
-                std::cout << "[MenuManager] ✓ newgame.png loaded successfully" << std::endl;
-            } else {
-                std::cout << "[MenuManager] ✗ newgame.png failed to load" << std::endl;
-            }
-            
+            // file in assets is named continuegame.png per project description
             m_tex[1] = m_loader("assets/raw/continuegame.png");
-            if (m_tex[1]) {
-                std::cout << "[MenuManager] ✓ continuegame.png loaded successfully" << std::endl;
-            } else {
-                std::cout << "[MenuManager] ✗ continuegame.png failed to load" << std::endl;
-            }
-            
             m_tex[2] = m_loader("assets/raw/exit.png");
-            if (m_tex[2]) {
-                std::cout << "[MenuManager] ✓ exit.png loaded successfully" << std::endl;
-            } else {
-                std::cout << "[MenuManager] ✗ exit.png failed to load" << std::endl;
-            }
-        }
-        catch (const std::exception& e)
-        {
-            std::cerr << "[MenuManager] Exception while loading textures: " << e.what() << std::endl;
-            // Ignore loader errors; continue with text-only buttons
-            m_background = nullptr;
-            m_tex = { nullptr, nullptr, nullptr };
         }
         catch (...)
         {
-            std::cerr << "[MenuManager] Unknown exception while loading textures" << std::endl;
             // Ignore loader errors; continue with text-only buttons
             m_background = nullptr;
             m_tex = { nullptr, nullptr, nullptr };
@@ -75,47 +47,35 @@ void MenuManager::SetTextureLoader(TextureLoaderFn loader)   //Texture loader fu
     }
 }
 
-void MenuManager::OnImGuiFrame()    //Rendering Phase A- Time and Fade management
+void MenuManager::OnImGuiFrame()
 {
-    if (!m_show && !m_fadingToGame)
-        return;
-
-    // Update fade animation
-    static double lastTime = getTimeSeconds();
-    double nowTime = getTimeSeconds();
-    float dt = static_cast<float>(nowTime - lastTime);
-    lastTime = nowTime;
-    
-    m_timeSinceShown += dt;
+    // Time-based fade management
+    static double lastT = getTimeSeconds();
+    double t = getTimeSeconds();
+    double dt = t - lastT;
+    lastT = t;
 
     if (m_show)
     {
-        // Menu fading in
-        m_alpha = std::min(1.0f, m_timeSinceShown / m_fadeDuration);
-    }
-    else if (m_fadingToGame)
-    {
-        // Game world fading in after "New Game" clicked
-        m_gameAlpha = std::min(1.0f, m_timeSinceShown / m_fadeDuration);
-        
-        if (m_gameAlpha >= 1.0f)
-        {
-            m_fadingToGame = false; // Fade complete
-        }
+        m_timeSinceShown = static_cast<float>(std::min(10.0, m_timeSinceShown + dt));
+        // Fade in
+        float target = 1.0f;
+        float step = static_cast<float>(dt / m_fadeDuration);
+        m_alpha = std::min(1.0f, m_alpha + step);
     }
     else
     {
-        // Menu fading out
-        m_alpha = 1.0f - std::min(1.0f, m_timeSinceShown / m_fadeDuration);
-        if (m_alpha <= 0.0f)
-        {
-            // Fully hidden
-            return;
-        }
+        // Fade out
+        float step = static_cast<float>(dt / m_fadeDuration);
+        m_alpha = std::max(0.0f, m_alpha - step);
     }
 
+    // If fully faded out and hidden, don't render.
+    if (!m_show && m_alpha <= 0.001f)
+        return;
+
     // Setup a centered, fullscreen invisible window for the menu (no titlebar)
-    ImGuiIO& io = ImGui::GetIO();    //Rendering Phase B- Draw Menu
+    ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(io.DisplaySize);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
@@ -128,13 +88,23 @@ void MenuManager::OnImGuiFrame()    //Rendering Phase A- Time and Fade managemen
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
 
-    // Draw menu background (if texture available)--replaced with black for simplicity
-    // Draw pure black background (ignore texture)
-    ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(0,0), io.DisplaySize, ImGui::GetColorU32(ImVec4(0,0,0,1.0f)));
+    // Draw menu background (if texture available)
+    if (m_background)
+    {
+        // Draw a fullscreen image (stretch)
+        ImVec2 size = io.DisplaySize;
+        ImGui::SetCursorPos(ImVec2(0, 0));
+        ImGui::Image(m_background, size, ImVec2(0,0), ImVec2(1,1), ImVec4(1,1,1,m_alpha));
+    }
+    else
+    {
+        // Dimmed background rectangle
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(0,0), io.DisplaySize, ImGui::GetColorU32(ImVec4(0,0,0,0.6f * m_alpha)));
+    }
 
     // Capture keyboard & mouse for menu navigation (so underlying app doesn't react)
     ImGui::SetNextWindowBgAlpha(0.0f);
-    ImGui::BeginChild("MenuButtonsRegion", ImVec2(0,0), false, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDecoration);  //Rendering Phase D- Button Container Setup
+    ImGui::BeginChild("MenuButtonsRegion", ImVec2(0,0), false, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDecoration);
 
     // Place the buttons centered vertically
     const float buttonWidth = 300.0f;
@@ -149,7 +119,7 @@ void MenuManager::OnImGuiFrame()    //Rendering Phase A- Time and Fade managemen
     handleInput();
 
     // Draw each button (image if we have it)
-    const char* labels[3] = { "New Game", "Continue", "Exit" };  //Rendering Phase F- Button Rendering Loop
+    const char* labels[3] = { "New Game", "Continue", "Exit" };
     for (int i = 0; i < 3; ++i)
     {
         if (i != 0) ImGui::Dummy(ImVec2(0, 12.0f)); // spacing
@@ -220,7 +190,7 @@ void MenuManager::OnImGuiFrame()    //Rendering Phase A- Time and Fade managemen
     ImGui::End();
 }
 
-void MenuManager::handleInput()   //Rendering Phase E- Input Handling
+void MenuManager::handleInput()
 {
     ImGuiIO& io = ImGui::GetIO();
     // Arrow navigation

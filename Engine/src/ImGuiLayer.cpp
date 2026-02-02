@@ -206,5 +206,12 @@ namespace Engine
         colors[ImGuiCol_PlotLines] = ImVec4(0.40f, 0.80f, 0.40f, 1.00f);
         colors[ImGuiCol_PlotHistogram] = ImVec4(0.40f, 0.60f, 0.80f, 1.00f);
     }
-
+    
+        ImTextureID ImGuiLayer::addTexture(VkSampler sampler, VkImageView view, VkImageLayout layout)
+{
+    if (!m_initialized)
+        return nullptr;
+    // ImGui_ImplVulkan_AddTexture returns a ImTextureID (void*).
+    return ImGui_ImplVulkan_AddTexture(sampler, view, layout);
+}
 } // namespace Engine

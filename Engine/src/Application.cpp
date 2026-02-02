@@ -6,6 +6,7 @@
 #include "Engine/ImGuiLayer.h"
 #include "Engine/PerformanceMonitor.h"
 #include "ECS/ECSContext.h"
+#include "Engine/ImGuiLayer.h"
 #include <iostream>
 #include <chrono>
 
@@ -187,6 +188,11 @@ namespace Engine
     VulkanContext &Application::GetVulkanContext() { return *m_Impl->vkContext; }
     Renderer &Application::GetRenderer() { return *m_Impl->renderer; }
     ECS::ECSContext &Application::GetECS() { return *m_Impl->ecs; }
+
+    ImGuiLayer* Application::GetImGuiLayer()
+    {
+        return m_Impl->imguiLayer.get();
+    }
 
     void Application::Close()
     {

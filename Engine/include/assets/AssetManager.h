@@ -45,6 +45,7 @@ namespace Engine
 
         MaterialAsset *getMaterial(MaterialHandle h);
         TextureAsset *getTexture(TextureHandle h);
+        TextureHandle loadTextureFromFile(const std::string &filePath);
 
         void addRef(ModelHandle h);
         void release(ModelHandle h);

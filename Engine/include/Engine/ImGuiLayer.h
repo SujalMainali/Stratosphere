@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <functional>
+#include <imgui.h>
 
 struct GLFWwindow;
 
@@ -10,7 +11,7 @@ namespace Engine
 {
     class VulkanContext;
     class Window;
-
+    
     /**
      * @brief ImGui integration layer for Vulkan rendering.
      * 
@@ -71,6 +72,12 @@ namespace Engine
          */
         using RenderCallback = std::function<void()>;
         void setRenderCallback(RenderCallback callback) { m_renderCallback = callback; }
+
+        /**
+         * @brief Register a Vulkan texture with ImGui and obtain an ImTextureID.
+         * @note This wraps ImGui_ImplVulkan_AddTexture and is a thin convenience helper.
+         */
+        ImTextureID addTexture(VkSampler sampler, VkImageView view, VkImageLayout layout);
 
     private:
         bool createDescriptorPool(VkDevice device);

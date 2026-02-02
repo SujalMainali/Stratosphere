@@ -2,6 +2,7 @@
 
 #include "Engine/Application.h"
 #include "Engine/Camera.h"
+#include "src/MenuManager.h"
 
 #include "update.h"
 
@@ -67,4 +68,15 @@ private:
     std::shared_ptr<Engine::GroundPlaneRenderPassModule> m_groundPass;
 
     Sample::SystemRunner m_systems;
+
+        // Menu
+    MenuManager m_menu;
+
+    // Small save slot filename
+    std::string m_saveFilePath = "sample_save.json";
+
+    // Helpers
+    void SaveGameState();
+    void LoadGameState();
+    bool HasSaveFile() const;
 };

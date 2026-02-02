@@ -14,6 +14,9 @@
 #include <functional>
 #include <iostream>
 
+#include <fstream>
+#include <iterator>
+
 const float TARGET = 10.0f; // Target size of models after scaling
 namespace Engine
 {
@@ -227,6 +230,83 @@ namespace Engine
             return nullptr;
         return it->second.asset.get();
     }
+
+    Engine::TextureHandle AssetManager::loadTextureFromFile(const std::string &filePath)
+{
+    // Read file contents into a vector<uint8_t>
+    std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+    if (!file)
+        return TextureHandle{};
+
+    const std::streamsize size = file.tellg();
+    if (size <= 0)
+        return TextureHandle{};
+
+    file.seekg(0, std::ios::beg);
+    std::vector<uint8_t> bytes;
+    bytes.resize(static_cast<size_t>(size));
+    if (!file.read(reinterpret_cast<char*>(bytes.data()), size))
+        return TextureHandle{};
+
+    // Create upload pool for single texture (similar to loadModel)
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+
+    VkCommandPool uploadPool = VK_NULL_HANDLE;
+    VkResult pr = vkCreateCommandPool(m_device, &poolInfo, nullptr, &uploadPool);
+    if (pr != VK_SUCCESS)
+        return TextureHandle{};
+
+    Engine::UploadContext upload{};
+    if (!Engine::BeginUploadContext(upload, m_device, m_phys, uploadPool, m_graphicsQueue))
+    {
+        vkDestroyCommandPool(m_device, uploadPool, nullptr);
+        return TextureHandle{};
+    }
+
+    auto tex = std::make_unique<TextureAsset>();
+
+    // Default sampler params (tweak if you want)
+    const bool isSRGB = false;
+    const VkSamplerAddressMode wrapU = toVkWrap(0); // Repeat
+    const VkSamplerAddressMode wrapV = toVkWrap(0);
+    const VkFilter minF = toVkFilter(1); // Linear
+    const VkFilter magF = toVkFilter(1); // Linear
+    const VkSamplerMipmapMode mipM = toVkMip(2); // Linear mipmap
+    const float maxAnisotropy = 1.0f;
+
+    if (!tex->uploadEncodedImage_Deferred(
+            upload,
+            bytes.data(),
+            bytes.size(),
+            isSRGB,
+            wrapU,
+            wrapV,
+            minF,
+            magF,
+            mipM,
+            maxAnisotropy))
+    {
+        Engine::EndSubmitAndWait(upload);
+        vkDestroyCommandPool(m_device, uploadPool, nullptr);
+        return TextureHandle{};
+    }
+
+    // Submit and wait (similar to loadModel)
+    if (!Engine::EndSubmitAndWait(upload))
+    {
+        vkDestroyCommandPool(m_device, uploadPool, nullptr);
+        return TextureHandle{};
+    }
+
+    vkDestroyCommandPool(m_device, uploadPool, nullptr);
+
+    // Create a texture entry with refCount = 1 (caller gets an owned handle)
+    TextureHandle th = createTexture_Internal(std::move(tex), 1);
+    return th;
+}
 
     void AssetManager::addRef(TextureHandle h)
     {

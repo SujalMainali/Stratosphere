@@ -8,6 +8,7 @@ namespace Engine
     class Window;
     class VulkanContext;
     class Renderer;
+    class ImGuiLayer;
 
     struct TimeStep
     {
@@ -51,6 +52,9 @@ namespace Engine
         // Event callback dispatching (simple)
         using EventCallbackFn = std::function<void(const std::string &eventName)>;
         void SetEventCallback(const EventCallbackFn &callback);
+
+        // Access to ImGuiLayer for texture registration with ImGui (optional)
+        ImGuiLayer* GetImGuiLayer();
 
     private:
         struct Impl;
