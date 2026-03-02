@@ -1,23 +1,75 @@
 {
     "name": "CombatKnight",
     "components": [
-        "Position", "Velocity", "Health", "MoveTarget", "MoveSpeed",
-        "Radius", "Separation", "AvoidanceParams", "Facing", "Path",
-        "Team", "AttackCooldown"
+        "Position",
+        "Velocity",
+        "Health",
+        "MoveTarget",
+        "MoveSpeed",
+        "Radius",
+        "Separation",
+        "AvoidanceParams",
+        "Facing",
+        "Path",
+        "Team",
+        "AttackCooldown"
     ],
     "defaults": {
-        "Position":        { "x": 0.0, "y": 0.0, "z": 0.0 },
-        "Velocity":        { "x": 0.0, "y": 0.0, "z": 0.0 },
-        "Health":          { "value": 140.0 },
-        "MoveTarget":      { "x": 0.0, "y": 0.0, "z": 0.0, "active": 0 },
-        "MoveSpeed":       { "value": 5.0 },
-        "Radius":          { "r": 0.5 },
-        "Separation":      { "value": 0.8 },
-        "AvoidanceParams": { "strength": 4.0, "maxAccel": 8.0, "blend": 0.55 },
-        "Facing":          { "yaw": 0.0 },
-        "Path":            {},
-        "Team":            { "id": 0 },
-        "AttackCooldown":  { "timer": 0.0, "interval": 1.5 }
+        "Position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+        },
+        "Velocity": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+        },
+        "Health": {
+            "value": 140.0
+        },
+        "MoveTarget": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "active": 0
+        },
+        "MoveSpeed": {
+            "value": 5.0
+        },
+        "Radius": {
+            "r": 5.0
+        },
+        "Separation": {
+            "value": 3.0
+        },
+        "AvoidanceParams": {
+            "strength": 20.0,
+            "maxAccel": 60.0,
+            "blend": 0.80,
+            "predictionTime": 0.55,
+            "nearGoalRadius": 2.0,
+            "nearGoalBoost": 2.5,
+            "stoppedBoost": 2.0,
+            "pressureBoost": 1.5,
+            "interactSlack": 0.35,
+            "falloffWeight": 0.35,
+            "predictiveWeight": 0.75,
+            "maxStopSpeed": 0.9
+        },
+        "Facing": {
+            "yaw": 0.0
+        },
+        "Path": {},
+        "Team": {
+            "id": 0
+        },
+        "AttackCooldown": {
+            "timer": 0.0,
+            "interval": 1.5
+        }
     },
-    "visual": { "model": "assets/Knight/Knight.smodel" }
+    "visual": {
+        "model": "assets/Knight/Knight.smodel"
+    }
 }

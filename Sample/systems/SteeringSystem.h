@@ -40,7 +40,7 @@ public:
         { return x * x + z * z; };
 
         // Gameplay uses meters; stop once we're within a small radius.
-        const float arrivalRadius2 = 0.25f;   // 0.5^2
+        const float arrivalRadius2 = 0.25f;    // 0.5^2
         const float waypointRadius2 = 0.0625f; // 0.25^2
 
         const auto &q = ecs.queries.get(m_queryId);
@@ -78,8 +78,8 @@ public:
 
                 if (!tgt.active)
                 {
-                    // Stop
-                    vel.x = vel.y = vel.z = 0.0f;
+                    // No active movement intent. Whoever deactivated MoveTarget is responsible
+                    // for clearing velocity if a hard stop is desired (e.g., arrival/combat).
                     continue;
                 }
 
@@ -167,12 +167,10 @@ public:
                     vel.z += diffZ * acceleration * dt;
                     vel.y = 0.0f;
 
-                    // Update Facing based on actual velocity (smooth turn)
-                    if (std::abs(vel.x) > 0.1f || std::abs(vel.z) > 0.1f)
-                    {
-                        facing.yaw = std::atan2(vel.x, vel.z);
-                        ecs.markDirty(m_facingId, archetypeId, i);
-                    }
+                    // Update Facing based on intended travel direction.
+                    // This avoids jitter when LocalAvoidance perturbs velocity later in the frame.
+                    facing.yaw = std::atan2(dx, dz);
+                    ecs.markDirty(m_facingId, archetypeId, i);
                 }
 
                 ecs.markDirty(m_velocityId, archetypeId, i);

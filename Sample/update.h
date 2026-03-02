@@ -12,6 +12,7 @@
 #include "systems/PoseUpdateSystem.h"
 #include "systems/RenderSystem.h"
 #include "systems/SpatialIndexSystem.h"
+#include "systems/LocalAvoidanceSystem.h"
 #include "systems/CombatSystem.h"
 
 namespace Engine
@@ -46,12 +47,13 @@ namespace Sample
         CommandSystem m_command;
         SteeringSystem m_steering;
         MovementSystem m_movement;
-        
+
         NavGrid m_navGrid;
         NavGridBuilderSystem m_navGridBuilder{&m_navGrid};
         PathfindingSystem m_pathfinding{&m_navGrid};
 
         SpatialIndexSystem m_spatialIndex{2.0f};
+        LocalAvoidanceSystem m_localAvoidance{&m_spatialIndex};
         CombatSystem m_combat;
 
         CharacterAnimationSystem m_characterAnim;

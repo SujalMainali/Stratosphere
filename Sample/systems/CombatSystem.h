@@ -61,28 +61,28 @@ public:
     // Per-team aggregate stats for the HUD overlay
     struct TeamStats
     {
-        int alive        = 0;     // living units this frame
-        int totalSpawned = 0;     // units that were initially spawned
-        float currentHP  = 0.0f;  // sum of living units' health
-        float maxHP      = 0.0f;  // totalSpawned * maxHPPerUnit
+        int alive = 0;          // living units this frame
+        int totalSpawned = 0;   // units that were initially spawned
+        float currentHP = 0.0f; // sum of living units' health
+        float maxHP = 0.0f;     // totalSpawned * maxHPPerUnit
     };
 
     // All combat tuning in one struct — maps 1:1 to BattleConfig.json "combat"
     struct CombatConfig
     {
-        float meleeRange       = 2.0f;
-        float damageMin        = 12.0f;   // low end of damage roll
-        float damageMax        = 28.0f;   // high end of damage roll
+        float meleeRange = 2.0f;
+        float damageMin = 12.0f; // low end of damage roll
+        float damageMax = 28.0f; // high end of damage roll
         float deathRemoveDelay = 3.0f;
-        float maxHPPerUnit     = 140.0f;
+        float maxHPPerUnit = 140.0f;
 
-        float missChance       = 0.20f;   // 0-1, chance an attack whiffs
-        float critChance       = 0.10f;   // 0-1, chance for a critical hit
-        float critMultiplier   = 2.0f;    // damage multiplier on crit
+        float missChance = 0.20f;    // 0-1, chance an attack whiffs
+        float critChance = 0.10f;    // 0-1, chance for a critical hit
+        float critMultiplier = 2.0f; // damage multiplier on crit
 
-        float rageMaxBonus     = 0.50f;   // at 0 HP remaining, +50% damage
-        float cooldownJitter   = 0.30f;   // ±30% random cooldown variation
-        float staggerMax       = 0.6f;    // max random initial cooldown offset
+        float rageMaxBonus = 0.50f;   // at 0 HP remaining, +50% damage
+        float cooldownJitter = 0.30f; // ±30% random cooldown variation
+        float staggerMax = 0.6f;      // max random initial cooldown offset
     };
 
     CombatSystem()
@@ -125,31 +125,35 @@ public:
     //
     void startBattle(float clickX, float clickZ)
     {
-        m_battleStarted    = true;
-        m_chargeActive     = true;
-        m_chargeIssued     = false;
-        m_battleClickX     = clickX;
-        m_battleClickZ     = clickZ;
+        m_battleStarted = true;
+        m_chargeActive = true;
+        m_chargeIssued = false;
+        m_battleClickX = clickX;
+        m_battleClickZ = clickZ;
         std::cout << "[CombatSystem] Battle started! Click=(" << clickX << "," << clickZ << ")\n";
     }
-    void startBattle()                 // legacy — no click target
+    void startBattle() // legacy — no click target
     {
         m_battleStarted = true;
-        m_chargeActive  = false;
-        m_chargeIssued  = false;
+        m_chargeActive = false;
+        m_chargeIssued = false;
         std::cout << "[CombatSystem] Battle started!\n";
     }
     bool isBattleStarted() const { return m_battleStarted; }
 
     // Human player control: one team requires spacebar to attack
-    void setHumanTeam(int teamId) { m_humanTeamId = teamId; }  // -1 = all AI
+    void setHumanTeam(int teamId) { m_humanTeamId = teamId; } // -1 = all AI
     void setHumanAttacking(bool attacking) { m_humanAttacking = attacking; }
-    int  humanTeamId() const { return m_humanTeamId; }
+    int humanTeamId() const { return m_humanTeamId; }
     bool isHumanAttacking() const { return m_humanAttacking; }
 
     // Legacy single-value setters still work
     void setMeleeRange(float range) { m_cfg.meleeRange = range; }
-    void setDamagePerHit(float dmg) { m_cfg.damageMin = dmg * 0.6f; m_cfg.damageMax = dmg * 1.4f; }
+    void setDamagePerHit(float dmg)
+    {
+        m_cfg.damageMin = dmg * 0.6f;
+        m_cfg.damageMax = dmg * 1.4f;
+    }
     void setDeathRemoveDelay(float sec) { m_cfg.deathRemoveDelay = sec; }
     void setMaxHPPerUnit(float hp) { m_cfg.maxHPPerUnit = hp; }
 
@@ -232,11 +236,11 @@ public:
         m_stops.clear();
 
         // Local aliases so code below stays readable
-        auto &damages     = m_damages;
+        auto &damages = m_damages;
         auto &attackAnims = m_attackAnims;
         auto &damageAnims = m_damageAnims;
-        auto &moves       = m_moves;
-        auto &stops       = m_stops;
+        auto &moves = m_moves;
+        auto &stops = m_stops;
 
         for (uint32_t archetypeId : q.matchingArchetypeIds)
         {
@@ -282,7 +286,7 @@ public:
                 Engine::ECS::Entity bestEnemy{};
 
                 m_spatial->forNeighbors(myX, myZ, [&](uint32_t neighborStoreId, uint32_t neighborRow)
-                {
+                                        {
                     auto *ns = ecs.stores.get(neighborStoreId);
                     if (!ns || !ns->hasPosition() || !ns->hasHealth() || !ns->hasTeam())
                         return;
@@ -299,14 +303,17 @@ public:
                     const float ex = ns->positions()[neighborRow].x;
                     const float ez = ns->positions()[neighborRow].z;
                     const float d2 = (ex - myX) * (ex - myX) + (ez - myZ) * (ez - myZ);
-                    if (d2 < bestDist2)
+                    const Engine::ECS::Entity cand = ns->entities()[neighborRow];
+                    const float tieEps = 1e-6f;
+                    const bool better = (d2 < bestDist2 - tieEps) ||
+                                        (std::fabs(d2 - bestDist2) <= tieEps && (!bestEnemy.valid() || cand.index < bestEnemy.index));
+                    if (better)
                     {
                         bestDist2 = d2;
                         bestEX = ex;
                         bestEZ = ez;
-                        bestEnemy = ns->entities()[neighborRow];
-                    }
-                });
+                        bestEnemy = cand;
+                    } });
 
                 // Fallback: full scan when spatial grid finds nothing
                 if (!bestEnemy.valid())
@@ -334,12 +341,16 @@ public:
 
                             const float d2 = (oPos[oRow].x - myX) * (oPos[oRow].x - myX) +
                                              (oPos[oRow].z - myZ) * (oPos[oRow].z - myZ);
-                            if (d2 < bestDist2)
+                            const Engine::ECS::Entity cand = oEnt[oRow];
+                            const float tieEps = 1e-6f;
+                            const bool better = (d2 < bestDist2 - tieEps) ||
+                                                (std::fabs(d2 - bestDist2) <= tieEps && (!bestEnemy.valid() || cand.index < bestEnemy.index));
+                            if (better)
                             {
                                 bestDist2 = d2;
                                 bestEX = oPos[oRow].x;
                                 bestEZ = oPos[oRow].z;
-                                bestEnemy = oEnt[oRow];
+                                bestEnemy = cand;
                             }
                         }
                     }
@@ -352,7 +363,8 @@ public:
                     if (!m_chargeActive)
                     {
                         float yaw = store.facings()[row].yaw;
-                        stops.push_back({myEntity, yaw});
+                        const bool clearVel = (store.moveTargets()[row].active != 0);
+                        stops.push_back({myEntity, yaw, clearVel});
                     }
                     continue;
                 }
@@ -361,7 +373,8 @@ public:
                 const float dx = bestEX - myX;
                 const float dz = bestEZ - myZ;
                 const float yaw = (dx * dx + dz * dz > 1e-6f)
-                    ? std::atan2(dx, dz) : store.facings()[row].yaw;
+                                      ? std::atan2(dx, dz)
+                                      : store.facings()[row].yaw;
 
                 // Squared-distance comparison avoids sqrt per entity per frame
                 if (bestDist2 <= meleeRange2)
@@ -371,7 +384,8 @@ public:
                         m_chargeActive = false;
 
                     // In melee range — stop and attack
-                    stops.push_back({myEntity, yaw});
+                    const bool clearVel = (store.moveTargets()[row].active != 0);
+                    stops.push_back({myEntity, yaw, clearVel});
 
                     if (cooldowns[row].timer <= 0.0f)
                     {
@@ -381,7 +395,7 @@ public:
 
                         // Always play attack animation
                         uint32_t attackClip = CombatAnims::ATTACK_START +
-                            (m_rng() % (CombatAnims::ATTACK_END - CombatAnims::ATTACK_START + 1));
+                                              (m_rng() % (CombatAnims::ATTACK_END - CombatAnims::ATTACK_START + 1));
                         attackAnims.push_back({myEntity, attackClip, 1.5f, false});
 
                         // --- Roll hit / miss ---
@@ -394,7 +408,7 @@ public:
                         {
                             // --- Roll damage in [damageMin, damageMax] ---
                             float baseDmg = m_cfg.damageMin +
-                                m_unitDist(m_rng) * (m_cfg.damageMax - m_cfg.damageMin);
+                                            m_unitDist(m_rng) * (m_cfg.damageMax - m_cfg.damageMin);
 
                             // --- Berserker rage: bonus damage based on missing HP ---
                             float myHPFrac = healths[row].value / m_cfg.maxHPPerUnit;
@@ -411,7 +425,7 @@ public:
 
                             // Queue damage anim on enemy
                             uint32_t dmgClip = CombatAnims::DAMAGE_START +
-                                (m_rng() % (CombatAnims::DAMAGE_END - CombatAnims::DAMAGE_START + 1));
+                                               (m_rng() % (CombatAnims::DAMAGE_END - CombatAnims::DAMAGE_START + 1));
                             // Crits play damage anim faster for visual punch
                             float dmgAnimSpeed = isCrit ? 1.4f : 1.0f;
                             damageAnims.push_back({bestEnemy, dmgClip, dmgAnimSpeed, false});
@@ -430,7 +444,7 @@ public:
                         const auto &tgt = store.moveTargets()[row];
                         float tdx = tgt.x - m_battleClickX;
                         float tdz = tgt.z - m_battleClickZ;
-                        skipChase = tgt.active && (tdx*tdx + tdz*tdz < 1.0f);
+                        skipChase = tgt.active && (tdx * tdx + tdz * tdz < 1.0f);
                     }
                     if (!skipChase)
                     {
@@ -449,26 +463,34 @@ public:
         for (const auto &s : stops)
         {
             auto *rec = ecs.entities.find(s.entity);
-            if (!rec) continue;
+            if (!rec)
+                continue;
             auto *st = ecs.stores.get(rec->archetypeId);
-            if (!st || rec->row >= st->size()) continue;
+            if (!st || rec->row >= st->size())
+                continue;
 
-            if (st->hasVelocity())
+            if (s.clearVelocity && st->hasVelocity())
                 st->velocities()[rec->row] = {0.0f, 0.0f, 0.0f};
             if (st->hasMoveTarget())
                 st->moveTargets()[rec->row].active = 0;
             if (st->hasFacing())
                 st->facings()[rec->row].yaw = s.yaw;
-            ecs.markDirty(m_velocityId, rec->archetypeId, rec->row);
+
+            if (st->hasMoveTarget())
+                ecs.markDirty(m_moveTargetId, rec->archetypeId, rec->row);
+            if (s.clearVelocity)
+                ecs.markDirty(m_velocityId, rec->archetypeId, rec->row);
         }
 
         // Apply moves (set MoveTarget — PathfindingSystem + SteeringSystem handle velocity)
         for (const auto &mv : moves)
         {
             auto *rec = ecs.entities.find(mv.entity);
-            if (!rec) continue;
+            if (!rec)
+                continue;
             auto *st = ecs.stores.get(rec->archetypeId);
-            if (!st || rec->row >= st->size()) continue;
+            if (!st || rec->row >= st->size())
+                continue;
 
             if (st->hasMoveTarget())
             {
@@ -509,9 +531,11 @@ public:
         for (const auto &aa : attackAnims)
         {
             auto *rec = ecs.entities.find(aa.entity);
-            if (!rec) continue;
+            if (!rec)
+                continue;
             auto *st = ecs.stores.get(rec->archetypeId);
-            if (!st || rec->row >= st->size() || !st->hasRenderAnimation()) continue;
+            if (!st || rec->row >= st->size() || !st->hasRenderAnimation())
+                continue;
 
             st->renderAnimations()[rec->row].clipIndex = aa.clipIndex;
             st->renderAnimations()[rec->row].timeSec = 0.0f;
@@ -525,9 +549,11 @@ public:
         for (const auto &d : damages)
         {
             auto *rec = ecs.entities.find(d.target);
-            if (!rec) continue;
+            if (!rec)
+                continue;
             auto *st = ecs.stores.get(rec->archetypeId);
-            if (!st || rec->row >= st->size() || !st->hasHealth()) continue;
+            if (!st || rec->row >= st->size() || !st->hasHealth())
+                continue;
 
             st->healths()[rec->row].value -= d.damage;
             m_statsDirty = true;
@@ -537,10 +563,13 @@ public:
         for (const auto &da : damageAnims)
         {
             auto *rec = ecs.entities.find(da.entity);
-            if (!rec) continue;
+            if (!rec)
+                continue;
             auto *st = ecs.stores.get(rec->archetypeId);
-            if (!st || rec->row >= st->size()) continue;
-            if (!st->hasHealth() || !st->hasRenderAnimation()) continue;
+            if (!st || rec->row >= st->size())
+                continue;
+            if (!st->hasHealth() || !st->hasRenderAnimation())
+                continue;
 
             // Only play damage anim if still alive
             if (st->healths()[rec->row].value > 0.0f)
@@ -559,7 +588,8 @@ public:
         for (uint32_t archetypeId : q.matchingArchetypeIds)
         {
             auto *storePtr = ecs.stores.get(archetypeId);
-            if (!storePtr || !storePtr->hasHealth()) continue;
+            if (!storePtr || !storePtr->hasHealth())
+                continue;
 
             const auto &hp = storePtr->healths();
             const auto &ent = storePtr->entities();
@@ -582,15 +612,17 @@ public:
             for (const auto &deadEntity : m_newlyDead)
             {
                 auto *rec = ecs.entities.find(deadEntity);
-                if (!rec) continue;
+                if (!rec)
+                    continue;
                 auto *st = ecs.stores.get(rec->archetypeId);
-                if (!st || rec->row >= st->size()) continue;
+                if (!st || rec->row >= st->size())
+                    continue;
 
                 // Play death animation
                 if (st->hasRenderAnimation())
                 {
                     uint32_t deathClip = CombatAnims::DEATH_START +
-                        (m_rng() % (CombatAnims::DEATH_END - CombatAnims::DEATH_START + 1));
+                                         (m_rng() % (CombatAnims::DEATH_END - CombatAnims::DEATH_START + 1));
                     st->renderAnimations()[rec->row].clipIndex = deathClip;
                     st->renderAnimations()[rec->row].timeSec = 0.0f;
                     st->renderAnimations()[rec->row].playing = true;
@@ -728,6 +760,7 @@ private:
     {
         Engine::ECS::Entity entity;
         float yaw;
+        bool clearVelocity;
     };
 
     // ── Charge helpers ─────────────────────────────────────────────
@@ -735,23 +768,25 @@ private:
     // Radius at which a unit is "passing through" the click point.
     // Must be > SteeringSystem arrivalRadius (0.5 m) so the redirect
     // happens BEFORE SteeringSystem stops the unit.
-    static constexpr float kPassRadius  = 3.0f;
+    static constexpr float kPassRadius = 3.0f;
     static constexpr float kPassRadius2 = kPassRadius * kPassRadius;
 
     // Leg 1: set every unit's MoveTarget to the click point.
     // PathfindingSystem will A* around obstacles on the next frame.
     void issueClickTargets(Engine::ECS::ECSContext &ecs,
-                            const Engine::ECS::Query &q)
+                           const Engine::ECS::Query &q)
     {
         for (uint32_t aid : q.matchingArchetypeIds)
         {
             auto *st = ecs.stores.get(aid);
-            if (!st || !st->hasMoveTarget() || !st->hasHealth()) continue;
+            if (!st || !st->hasMoveTarget() || !st->hasHealth())
+                continue;
             auto &mt = st->moveTargets();
             const auto &hp = st->healths();
             for (uint32_t r = 0; r < st->size(); ++r)
             {
-                if (hp[r].value <= 0.0f) continue;
+                if (hp[r].value <= 0.0f)
+                    continue;
                 mt[r].x = m_battleClickX;
                 mt[r].y = 0.0f;
                 mt[r].z = m_battleClickZ;
@@ -770,7 +805,7 @@ private:
     // Because kPassRadius (3 m) > SteeringSystem arrival (0.5 m),
     // the redirect happens while the unit is still RUNNING — no stop.
     void promoteUnitsNearClick(Engine::ECS::ECSContext &ecs,
-                                const Engine::ECS::Query &q)
+                               const Engine::ECS::Query &q)
     {
         for (uint32_t aid : q.matchingArchetypeIds)
         {
@@ -779,26 +814,30 @@ private:
                 !st->hasPosition() || !st->hasTeam())
                 continue;
 
-            auto &mt        = st->moveTargets();
+            auto &mt = st->moveTargets();
             const auto &pos = st->positions();
-            const auto &hp  = st->healths();
-            const auto &tm  = st->teams();
+            const auto &hp = st->healths();
+            const auto &tm = st->teams();
             const bool hasP = st->hasPath();
 
             for (uint32_t r = 0; r < st->size(); ++r)
             {
-                if (hp[r].value <= 0.0f) continue;
-                if (!mt[r].active)       continue;
+                if (hp[r].value <= 0.0f)
+                    continue;
+                if (!mt[r].active)
+                    continue;
 
                 // Already promoted?  (MoveTarget no longer equals click)
                 float dtx = mt[r].x - m_battleClickX;
                 float dtz = mt[r].z - m_battleClickZ;
-                if (dtx * dtx + dtz * dtz > 1.0f) continue;
+                if (dtx * dtx + dtz * dtz > 1.0f)
+                    continue;
 
                 // Close enough to click → promote to leg 2
                 float dx = pos[r].x - m_battleClickX;
                 float dz = pos[r].z - m_battleClickZ;
-                if (dx * dx + dz * dz > kPassRadius2) continue;
+                if (dx * dx + dz * dz > kPassRadius2)
+                    continue;
 
                 // Find nearest LIVE enemy via spatial index (O(1) vs O(N))
                 uint8_t myTeam = tm[r].id;
@@ -809,20 +848,27 @@ private:
                 {
                     // Try spatial grid first — fast local lookup
                     m_spatial->forNeighbors(pos[r].x, pos[r].z,
-                        [&](uint32_t nStoreId, uint32_t nRow)
-                    {
-                        auto *ns = ecs.stores.get(nStoreId);
-                        if (!ns || !ns->hasPosition() || !ns->hasHealth() || !ns->hasTeam())
-                            return;
-                        if (nRow >= ns->size()) return;
-                        if (ns->teams()[nRow].id == myTeam) return;
-                        if (ns->healths()[nRow].value <= 0.0f) return;
-                        float ex = ns->positions()[nRow].x;
-                        float ez = ns->positions()[nRow].z;
-                        float d2 = (ex - pos[r].x)*(ex - pos[r].x)
-                                 + (ez - pos[r].z)*(ez - pos[r].z);
-                        if (d2 < bestD2) { bestD2 = d2; bestEX = ex; bestEZ = ez; }
-                    });
+                                            [&](uint32_t nStoreId, uint32_t nRow)
+                                            {
+                                                auto *ns = ecs.stores.get(nStoreId);
+                                                if (!ns || !ns->hasPosition() || !ns->hasHealth() || !ns->hasTeam())
+                                                    return;
+                                                if (nRow >= ns->size())
+                                                    return;
+                                                if (ns->teams()[nRow].id == myTeam)
+                                                    return;
+                                                if (ns->healths()[nRow].value <= 0.0f)
+                                                    return;
+                                                float ex = ns->positions()[nRow].x;
+                                                float ez = ns->positions()[nRow].z;
+                                                float d2 = (ex - pos[r].x) * (ex - pos[r].x) + (ez - pos[r].z) * (ez - pos[r].z);
+                                                if (d2 < bestD2)
+                                                {
+                                                    bestD2 = d2;
+                                                    bestEX = ex;
+                                                    bestEZ = ez;
+                                                }
+                                            });
                 }
 
                 // Fallback: full scan if spatial found nothing
@@ -838,11 +884,17 @@ private:
                         const auto &ot = os->teams();
                         for (uint32_t orow = 0; orow < os->size(); ++orow)
                         {
-                            if (ot[orow].id == myTeam) continue;
-                            if (oh[orow].value <= 0.0f) continue;
-                            float d2 = (op[orow].x - pos[r].x)*(op[orow].x - pos[r].x)
-                                     + (op[orow].z - pos[r].z)*(op[orow].z - pos[r].z);
-                            if (d2 < bestD2) { bestD2 = d2; bestEX = op[orow].x; bestEZ = op[orow].z; }
+                            if (ot[orow].id == myTeam)
+                                continue;
+                            if (oh[orow].value <= 0.0f)
+                                continue;
+                            float d2 = (op[orow].x - pos[r].x) * (op[orow].x - pos[r].x) + (op[orow].z - pos[r].z) * (op[orow].z - pos[r].z);
+                            if (d2 < bestD2)
+                            {
+                                bestD2 = d2;
+                                bestEX = op[orow].x;
+                                bestEZ = op[orow].z;
+                            }
                         }
                     }
                 }
@@ -870,7 +922,8 @@ private:
         for (uint32_t archetypeId : q.matchingArchetypeIds)
         {
             auto *st = ecs.stores.get(archetypeId);
-            if (!st || !st->hasAttackCooldown()) continue;
+            if (!st || !st->hasAttackCooldown())
+                continue;
             auto &cds = st->attackCooldowns();
             const uint32_t n = st->size();
             for (uint32_t row = 0; row < n; ++row)
@@ -881,21 +934,21 @@ private:
     SpatialIndexSystem *m_spatial = nullptr;
     Engine::AssetManager *m_assets = nullptr;
     bool m_loggedStart = false;
-    bool m_battleStarted = false;  // gated by ground click
-    bool m_statsDirty     = true;   // refresh team stats only when needed
+    bool m_battleStarted = false; // gated by ground click
+    bool m_statsDirty = true;     // refresh team stats only when needed
 
     // Charge state
     float m_battleClickX = 0.0f;
     float m_battleClickZ = 0.0f;
-    bool  m_chargeActive = false;   // true while armies are charging
-    bool  m_chargeIssued = false;   // leg-1 targets sent
+    bool m_chargeActive = false; // true while armies are charging
+    bool m_chargeIssued = false; // leg-1 targets sent
 
     // All combat tuning lives here
     CombatConfig m_cfg;
 
     // Human player control
-    int  m_humanTeamId   = -1;     // -1 = all AI, 0 = team A is human, 1 = team B
-    bool m_humanAttacking = false;  // true while spacebar is held
+    int m_humanTeamId = -1;        // -1 = all AI, 0 = team A is human, 1 = team B
+    bool m_humanAttacking = false; // true while spacebar is held
 
     // Per-team stats (refreshed each frame)
     std::unordered_map<uint8_t, TeamStats> m_teamStats;
@@ -914,17 +967,17 @@ private:
     Engine::ECS::QueryId m_queryId = Engine::ECS::QueryManager::InvalidQuery;
 
     std::vector<PendingDeath> m_deathQueue;
-    std::unordered_set<uint32_t> m_deathQueueSet;  // O(1) death-queue membership test
+    std::unordered_set<uint32_t> m_deathQueueSet; // O(1) death-queue membership test
 
     // Persistent per-frame buffers (cleared each frame, memory reused)
-    std::vector<DamageAction>  m_damages;
-    std::vector<AnimAction>    m_attackAnims;
-    std::vector<AnimAction>    m_damageAnims;
-    std::vector<MoveAction>    m_moves;
-    std::vector<StopAction>    m_stops;
+    std::vector<DamageAction> m_damages;
+    std::vector<AnimAction> m_attackAnims;
+    std::vector<AnimAction> m_damageAnims;
+    std::vector<MoveAction> m_moves;
+    std::vector<StopAction> m_stops;
     std::vector<Engine::ECS::Entity> m_newlyDead;
 
-    std::mt19937 m_rng;  // seeded non-deterministically in constructor
+    std::mt19937 m_rng;                                            // seeded non-deterministically in constructor
     std::uniform_real_distribution<float> m_unitDist{0.0f, 1.0f};  // [0,1)
     std::uniform_real_distribution<float> m_realDist{-1.0f, 1.0f}; // [-1,1)
 };

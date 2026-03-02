@@ -21,6 +21,7 @@ namespace Sample
         m_pathfinding.buildMasks(registry);
         m_movement.buildMasks(registry);
         m_spatialIndex.buildMasks(registry);
+        m_localAvoidance.buildMasks(registry);
         m_combat.buildMasks(registry);
         m_combat.setSpatialIndex(&m_spatialIndex);
         m_characterAnim.buildMasks(registry);
@@ -44,31 +45,34 @@ namespace Sample
         // 1. Input
         m_command.update(ecs, dtSeconds);
 
-        // 2. NavGrid (Rebuild grid from static obstacles)
-        m_navGridBuilder.update(ecs, dtSeconds);
-
-        // 3. Pathfinding (Plan paths for units with invalid/new targets)
-        m_pathfinding.update(ecs, dtSeconds);
-
-        // 4. Steering (Follow waypoints, update facing)
-        m_steering.update(ecs, dtSeconds);
-
-        // 5. Movement integration
-        m_movement.update(ecs, dtSeconds);
-
-        // 5.5 Spatial index rebuild
+        // 2. Spatial index rebuild (used by combat neighbor queries)
         m_spatialIndex.update(ecs, dtSeconds);
 
-        // 5.6 Combat (find enemies, attack, damage, death)
+        // 3. Combat (may set move targets/stop units)
         m_combat.update(ecs, dtSeconds);
-        
-        // 6. Animation selection
+
+        // 4. NavGrid (Rebuild grid from static obstacles)
+        m_navGridBuilder.update(ecs, dtSeconds);
+
+        // 5. Pathfinding (Plan paths for units with invalid/new targets)
+        m_pathfinding.update(ecs, dtSeconds);
+
+        // 6. Steering (Follow waypoints, update facing) writes preferred velocity
+        m_steering.update(ecs, dtSeconds);
+
+        // 7. Local avoidance adjusts velocity to reduce overlaps
+        m_localAvoidance.update(ecs, dtSeconds);
+
+        // 8. Movement integration (uses velocity produced by steering+avoidance)
+        m_movement.update(ecs, dtSeconds);
+
+        // 9. Animation selection
         m_characterAnim.update(ecs, dtSeconds);
 
-        // 7. Pose update
+        // 10. Pose update
         m_poseUpdate.update(ecs, dtSeconds);
-        
-        // 8. Render
+
+        // 11. Render
         m_renderModel.update(ecs, dtSeconds);
     }
 

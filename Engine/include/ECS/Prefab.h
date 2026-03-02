@@ -283,7 +283,7 @@ namespace Engine::ECS
 
         // Parse defaults: AvoidanceParams
         {
-            std::regex re_ap(R"("AvoidanceParams"\s*:\s*\{\s*"strength"\s*:\s*([-+]?\d*\.?\d+),\s*"maxAccel"\s*:\s*([-+]?\d*\.?\d+),\s*"blend"\s*:\s*([-+]?\d*\.?\d+)\s*\})");
+            std::regex re_ap(R"("AvoidanceParams"\s*:\s*\{\s*"strength"\s*:\s*([-+]?\d*\.?\d+),\s*"maxAccel"\s*:\s*([-+]?\d*\.?\d+),\s*"blend"\s*:\s*([-+]?\d*\.?\d+),\s*"predictionTime"\s*:\s*([-+]?\d*\.?\d+),\s*"nearGoalRadius"\s*:\s*([-+]?\d*\.?\d+),\s*"nearGoalBoost"\s*:\s*([-+]?\d*\.?\d+),\s*"stoppedBoost"\s*:\s*([-+]?\d*\.?\d+),\s*"pressureBoost"\s*:\s*([-+]?\d*\.?\d+),\s*"interactSlack"\s*:\s*([-+]?\d*\.?\d+),\s*"falloffWeight"\s*:\s*([-+]?\d*\.?\d+),\s*"predictiveWeight"\s*:\s*([-+]?\d*\.?\d+),\s*"maxStopSpeed"\s*:\s*([-+]?\d*\.?\d+)\s*\})");
             std::smatch m;
             if (std::regex_search(jsonText, m, re_ap))
             {
@@ -291,6 +291,15 @@ namespace Engine::ECS
                 ap.strength = std::stof(m[1].str());
                 ap.maxAccel = std::stof(m[2].str());
                 ap.blend = std::stof(m[3].str());
+                ap.predictionTime = std::stof(m[4].str());
+                ap.nearGoalRadius = std::stof(m[5].str());
+                ap.nearGoalBoost = std::stof(m[6].str());
+                ap.stoppedBoost = std::stof(m[7].str());
+                ap.pressureBoost = std::stof(m[8].str());
+                ap.interactSlack = std::stof(m[9].str());
+                ap.falloffWeight = std::stof(m[10].str());
+                ap.predictiveWeight = std::stof(m[11].str());
+                ap.maxStopSpeed = std::stof(m[12].str());
                 uint32_t cid = registry.ensureId("AvoidanceParams");
                 p.defaults.emplace(cid, ap);
             }
@@ -325,11 +334,11 @@ namespace Engine::ECS
         // Parse defaults: Path (mostly for ensuring ID existence if default used)
         {
             // Path has no JSON fields for now, but if present in defaults block:
-             if (jsonText.find("\"Path\"") != std::string::npos) 
-             {
-                 // ensure ID
+            if (jsonText.find("\"Path\"") != std::string::npos)
+            {
+                // ensure ID
                 (void)registry.ensureId("Path");
-             }
+            }
         }
 
         // Parse defaults: Team

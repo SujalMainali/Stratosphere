@@ -2,129 +2,240 @@
     "schema": "battle_config_v1",
     "name": "Maze_Battle_20v20",
     "description": "Two armies navigate a maze to reach each other. Click the glowing zone in the central gap to start!",
-
     "combat": {
-        "meleeRange": 2.0,
+        "meleeRange": 5.0,
         "damageMin": 14.0,
         "damageMax": 24.0,
         "deathRemoveDelay": 3.0,
         "maxHPPerUnit": 140.0,
-
         "missChance": 0.15,
         "critChance": 0.05,
         "critMultiplier": 1.5,
-
         "rageMaxBonus": 0.20,
         "cooldownJitter": 0.15,
         "staggerMax": 0.4
     },
-
     "anchors": {
-        "team_a_spawn": { "x": -90.0, "z": 0.0 },
-        "team_b_spawn": { "x":  90.0, "z": 0.0 }
+        "team_a_spawn": {
+            "x": -90.0,
+            "z": 0.0
+        },
+        "team_b_spawn": {
+            "x": 90.0,
+            "z": 0.0
+        }
     },
-
     "obstacles": [
         {
             "_comment": "Wall 1 — left barrier, gap top-side",
             "prefab": "TreeStumpWall",
-            "start": { "x": -55.0, "z": -50.0 },
-            "end":   { "x": -55.0, "z":  50.0 },
+            "start": {
+                "x": -55.0,
+                "z": -50.0
+            },
+            "end": {
+                "x": -55.0,
+                "z": 50.0
+            },
             "spacing": 3.0,
             "gaps": [
-                { "center": { "x": -55.0, "z": 20.0 }, "width": 24.0 }
+                {
+                    "center": {
+                        "x": -55.0,
+                        "z": 20.0
+                    },
+                    "width": 24.0
+                }
             ]
         },
         {
             "_comment": "Wall 2 — center-left barrier, gap bottom-side",
             "prefab": "TreeStumpWall",
-            "start": { "x": -20.0, "z": -50.0 },
-            "end":   { "x": -20.0, "z":  50.0 },
+            "start": {
+                "x": -20.0,
+                "z": -50.0
+            },
+            "end": {
+                "x": -20.0,
+                "z": 50.0
+            },
             "spacing": 3.0,
             "gaps": [
-                { "center": { "x": -20.0, "z": -20.0 }, "width": 24.0 }
+                {
+                    "center": {
+                        "x": -20.0,
+                        "z": -20.0
+                    },
+                    "width": 24.0
+                }
             ]
         },
         {
             "_comment": "Wall 3 — center-right barrier, gap top-side",
             "prefab": "TreeStumpWall",
-            "start": { "x":  20.0, "z": -50.0 },
-            "end":   { "x":  20.0, "z":  50.0 },
+            "start": {
+                "x": 20.0,
+                "z": -50.0
+            },
+            "end": {
+                "x": 20.0,
+                "z": 50.0
+            },
             "spacing": 3.0,
             "gaps": [
-                { "center": { "x": 20.0, "z": 20.0 }, "width": 24.0 }
+                {
+                    "center": {
+                        "x": 20.0,
+                        "z": 20.0
+                    },
+                    "width": 24.0
+                }
             ]
         },
         {
             "_comment": "Wall 4 — right barrier, gap bottom-side",
             "prefab": "TreeStumpWall",
-            "start": { "x":  55.0, "z": -50.0 },
-            "end":   { "x":  55.0, "z":  50.0 },
+            "start": {
+                "x": 55.0,
+                "z": -50.0
+            },
+            "end": {
+                "x": 55.0,
+                "z": 50.0
+            },
             "spacing": 3.0,
             "gaps": [
-                { "center": { "x": 55.0, "z": -20.0 }, "width": 24.0 }
+                {
+                    "center": {
+                        "x": 55.0,
+                        "z": -20.0
+                    },
+                    "width": 24.0
+                }
             ]
         },
         {
             "_comment": "Horizontal top wall between Wall1 and Wall2",
             "prefab": "TreeStumpWall",
-            "start": { "x": -55.0, "z": 40.0 },
-            "end":   { "x": -20.0, "z": 40.0 },
+            "start": {
+                "x": -55.0,
+                "z": 40.0
+            },
+            "end": {
+                "x": -20.0,
+                "z": 40.0
+            },
             "spacing": 3.0,
             "gaps": [
-                { "center": { "x": -37.0, "z": 40.0 }, "width": 22.0 }
+                {
+                    "center": {
+                        "x": -37.0,
+                        "z": 40.0
+                    },
+                    "width": 22.0
+                }
             ]
         },
         {
             "_comment": "Horizontal bottom wall between Wall1 and Wall2",
             "prefab": "TreeStumpWall",
-            "start": { "x": -55.0, "z": -40.0 },
-            "end":   { "x": -20.0, "z": -40.0 },
+            "start": {
+                "x": -55.0,
+                "z": -40.0
+            },
+            "end": {
+                "x": -20.0,
+                "z": -40.0
+            },
             "spacing": 3.0,
             "gaps": [
-                { "center": { "x": -37.0, "z": -40.0 }, "width": 22.0 }
+                {
+                    "center": {
+                        "x": -37.0,
+                        "z": -40.0
+                    },
+                    "width": 22.0
+                }
             ]
         },
         {
             "_comment": "Horizontal center wall — forces zigzag through middle",
             "prefab": "TreeStumpWall",
-            "start": { "x": -20.0, "z":  0.0 },
-            "end":   { "x":  20.0, "z":  0.0 },
+            "start": {
+                "x": -20.0,
+                "z": 0.0
+            },
+            "end": {
+                "x": 20.0,
+                "z": 0.0
+            },
             "spacing": 3.0,
             "gaps": [
-                { "center": { "x": 0.0, "z": 0.0 }, "width": 24.0 }
+                {
+                    "center": {
+                        "x": 0.0,
+                        "z": 0.0
+                    },
+                    "width": 24.0
+                }
             ]
         },
         {
             "_comment": "Horizontal top wall between Wall3 and Wall4",
             "prefab": "TreeStumpWall",
-            "start": { "x":  20.0, "z": 40.0 },
-            "end":   { "x":  55.0, "z": 40.0 },
+            "start": {
+                "x": 20.0,
+                "z": 40.0
+            },
+            "end": {
+                "x": 55.0,
+                "z": 40.0
+            },
             "spacing": 3.0,
             "gaps": [
-                { "center": { "x": 37.0, "z": 40.0 }, "width": 22.0 }
+                {
+                    "center": {
+                        "x": 37.0,
+                        "z": 40.0
+                    },
+                    "width": 22.0
+                }
             ]
         },
         {
             "_comment": "Horizontal bottom wall between Wall3 and Wall4",
             "prefab": "TreeStumpWall",
-            "start": { "x":  20.0, "z": -40.0 },
-            "end":   { "x":  55.0, "z": -40.0 },
+            "start": {
+                "x": 20.0,
+                "z": -40.0
+            },
+            "end": {
+                "x": 55.0,
+                "z": -40.0
+            },
             "spacing": 3.0,
             "gaps": [
-                { "center": { "x": 37.0, "z": -40.0 }, "width": 22.0 }
+                {
+                    "center": {
+                        "x": 37.0,
+                        "z": -40.0
+                    },
+                    "width": 22.0
+                }
             ]
         }
     ],
-
     "spawnGroups": [
         {
             "id": "team_a",
             "unitType": "CombatKnight",
             "team": 0,
-            "count": 24,
+            "count": 2,
             "anchor": "team_a_spawn",
-            "offset": { "x": 0.0, "z": 0.0 },
+            "offset": {
+                "x": 0.0,
+                "z": 0.0
+            },
             "facingYawDeg": 90.0,
             "formation": {
                 "kind": "grid",
@@ -137,9 +248,12 @@
             "id": "team_b",
             "unitType": "CombatKnight",
             "team": 1,
-            "count": 20,
+            "count": 2,
             "anchor": "team_b_spawn",
-            "offset": { "x": 0.0, "z": 0.0 },
+            "offset": {
+                "x": 0.0,
+                "z": 0.0
+            },
             "facingYawDeg": -90.0,
             "formation": {
                 "kind": "grid",

@@ -83,9 +83,23 @@ namespace Engine::ECS
     // Tunables for local avoidance
     struct AvoidanceParams
     {
-        float strength = 1.0f; // separation strength
-        float maxAccel = 0.9f; // clamp acceleration (units/s^2)
-        float blend = 0.55f;   // velocity smoothing
+        // Base separation
+        float strength = 1.0f; // acceleration scale (units/s^2)
+        float maxAccel = 0.9f; // clamp acceleration magnitude (units/s^2)
+        float blend = 0.55f;   // 0..1 blend from preferred velocity to avoided velocity
+
+        // Neighbor interaction
+        float predictionTime = 0.55f;   // seconds, short-horizon predictive check
+        float interactSlack = 0.35f;    // meters, extra interaction range beyond desired distance
+        float falloffWeight = 0.35f;    // weight for soft keep-apart when not overlapping
+        float predictiveWeight = 0.75f; // weight for predictive closest-approach avoidance
+        float pressureBoost = 1.5f;     // multiplier when overlapped / high-pressure
+
+        // Arrival / stopped behavior
+        float nearGoalRadius = 2.0f; // meters
+        float nearGoalBoost = 2.5f;  // multiplier added near goal: 1 + nearGoalBoost*t
+        float stoppedBoost = 2.0f;   // multiplier when not moving and no target
+        float maxStopSpeed = 0.9f;   // clamp speed when preferred speed ~0
     };
 
     // Row-level tag used by selection (no per-row storage; stored in row masks).
@@ -170,8 +184,8 @@ namespace Engine::ECS
     // Melee attack cooldown timer.
     struct AttackCooldown
     {
-        float timer = 0.0f;      // current countdown (seconds)
-        float interval = 1.5f;   // time between attacks (seconds)
+        float timer = 0.0f;    // current countdown (seconds)
+        float interval = 1.5f; // time between attacks (seconds)
     };
 
     // Typed defaults per component ID (used by Prefabs/Stores).
