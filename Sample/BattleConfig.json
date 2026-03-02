@@ -4,6 +4,7 @@
     "description": "Two armies navigate a maze to reach each other. Click the glowing zone in the central gap to start!",
     "combat": {
         "meleeRange": 5.0,
+        "engageRange": 14.0,
         "damageMin": 14.0,
         "damageMax": 24.0,
         "deathRemoveDelay": 3.0,

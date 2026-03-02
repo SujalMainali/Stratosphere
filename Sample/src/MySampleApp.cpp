@@ -259,6 +259,7 @@ void MySampleApp::PickAndSelectEntityAtCursor()
     const float height = static_cast<float>(win.GetHeight());
 
     const uint32_t selectedId = ecs.components.ensureId("Selected");
+    const uint32_t teamId = ecs.components.ensureId("Team");
     const uint32_t posId = ecs.components.ensureId("Position");
     const uint32_t rmId = ecs.components.ensureId("RenderModel");
     const uint32_t raId = ecs.components.ensureId("RenderAnimation");
@@ -339,10 +340,82 @@ void MySampleApp::PickAndSelectEntityAtCursor()
 
     if (bestStore)
     {
-        // Clicked on an entity - select it
-        // Selection is now a tag-like component in the archetype signature (no row masks).
+        // Clicked on an entity.
+        // - Friendly: select the entire group (all living units with the same Team id).
+        // - Enemy: issue an attack-move for currently-selected units toward that enemy.
+
         const Engine::ECS::Entity picked = bestStore->entities()[bestRow];
-        ecs.setTagExclusive(picked, selectedId);
+        const auto &pickedPos = bestStore->positions()[bestRow];
+
+        const int playerTeam = m_systems.GetCombatSystem().humanTeamId();
+        const bool havePickedTeam = bestStore->hasTeam();
+        const uint8_t pickedTeam = havePickedTeam ? bestStore->teams()[bestRow].id : 0u;
+
+        auto clearSelection = [&]()
+        {
+            std::vector<Engine::ECS::Entity> toClear;
+            toClear.reserve(256);
+            for (const auto &ptr : ecs.stores.stores())
+            {
+                if (!ptr)
+                    continue;
+                const auto &store = *ptr;
+                if (!store.signature().has(selectedId))
+                    continue;
+                const auto &ents = store.entities();
+                const uint32_t n = store.size();
+                for (uint32_t row = 0; row < n; ++row)
+                    toClear.push_back(ents[row]);
+            }
+            for (const auto &e : toClear)
+                (void)ecs.removeTag(e, selectedId);
+        };
+
+        auto selectTeamGroup = [&](uint8_t teamToSelect)
+        {
+            clearSelection();
+            std::vector<Engine::ECS::Entity> toSelect;
+            toSelect.reserve(512);
+            for (const auto &ptr : ecs.stores.stores())
+            {
+                if (!ptr)
+                    continue;
+                const auto &store = *ptr;
+                if (!store.signature().has(posId))
+                    continue;
+                if (!store.signature().has(teamId))
+                    continue;
+                if (store.signature().has(disabledId) || store.signature().has(deadId))
+                    continue;
+
+                const auto &teams = store.teams();
+                const auto &ents = store.entities();
+                const uint32_t n = store.size();
+                for (uint32_t row = 0; row < n; ++row)
+                {
+                    if (teams[row].id == teamToSelect)
+                        toSelect.push_back(ents[row]);
+                }
+            }
+            for (const auto &e : toSelect)
+                (void)ecs.addTag(e, selectedId);
+        };
+
+        const bool isEnemy = (playerTeam >= 0 && havePickedTeam && pickedTeam != static_cast<uint8_t>(playerTeam));
+        if (!isEnemy)
+        {
+            // Friendly group selection
+            selectTeamGroup(pickedTeam);
+        }
+        else
+        {
+            // Enemy clicked: ensure we have a friendly group selected, then issue an attack-move.
+            if (playerTeam >= 0)
+                selectTeamGroup(static_cast<uint8_t>(playerTeam));
+
+            // Use existing command pipeline (formation offsets) toward the enemy position.
+            m_systems.SetGlobalMoveTarget(pickedPos.x, 0.0f, pickedPos.z);
+        }
     }
     else
     {
@@ -466,10 +539,10 @@ void MySampleApp::OnRender()
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin("##BattleHUD", nullptr,
-            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-            ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground |
-            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                         ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground |
+                         ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
         ImGui::PopStyleVar(2);
         ImGui::PopStyleColor();
 
@@ -480,7 +553,8 @@ void MySampleApp::OnRender()
                                const char *label, ImU32 fillColor, ImU32 bgColor)
         {
             float fraction = (stats.maxHP > 0.0f)
-                ? std::clamp(stats.currentHP / stats.maxHP, 0.0f, 1.0f) : 0.0f;
+                                 ? std::clamp(stats.currentHP / stats.maxHP, 0.0f, 1.0f)
+                                 : 0.0f;
 
             // Background (dark)
             draw->AddRectFilled(ImVec2(x, y), ImVec2(x + barW, y + barH), bgColor, 4.0f);
@@ -537,9 +611,7 @@ void MySampleApp::OnRender()
         }
 
         // --- Victory / Defeat overlay ---
-        if (combat.isBattleStarted()
-            && teamA.totalSpawned > 0 && teamB.totalSpawned > 0
-            && (teamA.alive == 0 || teamB.alive == 0))
+        if (combat.isBattleStarted() && teamA.totalSpawned > 0 && teamB.totalSpawned > 0 && (teamA.alive == 0 || teamB.alive == 0))
         {
             const float screenH = io.DisplaySize.y;
 
@@ -698,9 +770,14 @@ void MySampleApp::setupECSFromPrefabs()
             {
                 const auto &c = root["combat"];
                 CombatSystem::CombatConfig cfg;
-                if (c.contains("meleeRange"))       cfg.meleeRange       = c["meleeRange"].get<float>();
-                if (c.contains("damageMin"))        cfg.damageMin        = c["damageMin"].get<float>();
-                if (c.contains("damageMax"))        cfg.damageMax        = c["damageMax"].get<float>();
+                if (c.contains("meleeRange"))
+                    cfg.meleeRange = c["meleeRange"].get<float>();
+                if (c.contains("engageRange"))
+                    cfg.engageRange = c["engageRange"].get<float>();
+                if (c.contains("damageMin"))
+                    cfg.damageMin = c["damageMin"].get<float>();
+                if (c.contains("damageMax"))
+                    cfg.damageMax = c["damageMax"].get<float>();
                 // Legacy single-value fallback
                 if (c.contains("damagePerHit") && !c.contains("damageMin"))
                 {
@@ -708,14 +785,22 @@ void MySampleApp::setupECSFromPrefabs()
                     cfg.damageMin = d * 0.6f;
                     cfg.damageMax = d * 1.4f;
                 }
-                if (c.contains("deathRemoveDelay")) cfg.deathRemoveDelay = c["deathRemoveDelay"].get<float>();
-                if (c.contains("maxHPPerUnit"))     cfg.maxHPPerUnit     = c["maxHPPerUnit"].get<float>();
-                if (c.contains("missChance"))       cfg.missChance       = c["missChance"].get<float>();
-                if (c.contains("critChance"))       cfg.critChance       = c["critChance"].get<float>();
-                if (c.contains("critMultiplier"))   cfg.critMultiplier   = c["critMultiplier"].get<float>();
-                if (c.contains("rageMaxBonus"))     cfg.rageMaxBonus     = c["rageMaxBonus"].get<float>();
-                if (c.contains("cooldownJitter"))   cfg.cooldownJitter   = c["cooldownJitter"].get<float>();
-                if (c.contains("staggerMax"))       cfg.staggerMax       = c["staggerMax"].get<float>();
+                if (c.contains("deathRemoveDelay"))
+                    cfg.deathRemoveDelay = c["deathRemoveDelay"].get<float>();
+                if (c.contains("maxHPPerUnit"))
+                    cfg.maxHPPerUnit = c["maxHPPerUnit"].get<float>();
+                if (c.contains("missChance"))
+                    cfg.missChance = c["missChance"].get<float>();
+                if (c.contains("critChance"))
+                    cfg.critChance = c["critChance"].get<float>();
+                if (c.contains("critMultiplier"))
+                    cfg.critMultiplier = c["critMultiplier"].get<float>();
+                if (c.contains("rageMaxBonus"))
+                    cfg.rageMaxBonus = c["rageMaxBonus"].get<float>();
+                if (c.contains("cooldownJitter"))
+                    cfg.cooldownJitter = c["cooldownJitter"].get<float>();
+                if (c.contains("staggerMax"))
+                    cfg.staggerMax = c["staggerMax"].get<float>();
                 m_systems.GetCombatSystemMut().applyConfig(cfg);
                 m_systems.GetCombatSystemMut().setHumanTeam(0); // Team A = human player
                 std::cout << "[Config] Combat config loaded from BattleConfig.json\n";
@@ -725,10 +810,10 @@ void MySampleApp::setupECSFromPrefabs()
             if (root.contains("startZone") && root["startZone"].is_object())
             {
                 const auto &sz = root["startZone"];
-                m_startZoneX      = sz.value("x", 0.0f);
-                m_startZoneZ      = sz.value("z", 0.0f);
+                m_startZoneX = sz.value("x", 0.0f);
+                m_startZoneZ = sz.value("z", 0.0f);
                 m_startZoneRadius = sz.value("radius", 10.0f);
-                m_hasStartZone    = true;
+                m_hasStartZone = true;
                 std::cout << "[Config] Start zone at (" << m_startZoneX << "," << m_startZoneZ
                           << ") r=" << m_startZoneRadius << "\n";
             }
@@ -755,44 +840,7 @@ void MySampleApp::OnEvent(const std::string &name)
 
     if (evt == "MouseButtonLeftDown")
     {
-        // Before panning, check if battle needs starting — click anywhere on ground
-        if (m_inGame && !m_systems.GetCombatSystem().isBattleStarted())
-        {
-            auto &win = GetWindow();
-            double mx = 0.0, my = 0.0;
-            win.GetCursorPosition(mx, my);
-            const float mouseX = static_cast<float>(mx);
-            const float mouseY = static_cast<float>(my);
-            const float width  = static_cast<float>(win.GetWidth());
-            const float height = static_cast<float>(win.GetHeight());
-
-            const glm::mat4 view = m_camera.GetViewMatrix();
-            const glm::mat4 proj = m_camera.GetProjectionMatrix();
-            const glm::mat4 vpM  = proj * view;
-            const float ndcX = (mouseX / width) * 2.0f - 1.0f;
-            const float ndcY = (mouseY / height) * 2.0f - 1.0f;
-            const glm::mat4 invVP = glm::inverse(vpM);
-            glm::vec4 nw = invVP * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
-            glm::vec4 fw = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
-            if (std::abs(nw.w) > 1e-6f) nw /= nw.w;
-            if (std::abs(fw.w) > 1e-6f) fw /= fw.w;
-            const glm::vec3 ro(nw);
-            const glm::vec3 rd = glm::normalize(glm::vec3(fw) - glm::vec3(nw));
-            if (std::abs(rd.y) > 1e-6f)
-            {
-                float t = -ro.y / rd.y;
-                if (t > 0.0f)
-                {
-                    glm::vec3 hit = ro + t * rd;
-                    // Click starts the battle — human army pathfinds toward
-                    // the clicked point; AI army charges at human units.
-                    // The engagement point emerges from velocity + pathfinding.
-                    m_systems.GetCombatSystemMut().startBattle(hit.x, hit.z);
-                    return;
-                }
-            }
-        }
-
+        // Left click is reserved for camera drag/pan only.
         m_isPanning = true;
         m_panJustStarted = true;
         auto &win = GetWindow();
@@ -823,8 +871,6 @@ void MySampleApp::OnEvent(const std::string &name)
         m_scrollDelta += static_cast<float>(yoff);
         return;
     }
-
-
 
     if (evt == "EscapePressed")
     {
