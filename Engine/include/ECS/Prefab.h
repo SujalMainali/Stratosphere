@@ -147,14 +147,14 @@ namespace Engine::ECS
                         rm.handle = h;
                         p.defaults[rmId] = rm;
 
-                        // Also add per-entity animation state (defaults: Idle animation, playing, looping)
+                        // Also add per-entity animation state.
                         const uint32_t raId = registry.ensureId("RenderAnimation");
                         p.signature.set(raId);
 
                         RenderAnimation ra{};
-                        ra.clipIndex = 65; // Stand_Idle_0 animation
-                        ra.playing = true; // Start playing immediately
-                        ra.loop = true;    // Loop the animation
+                        ra.clipIndex = 0;
+                        ra.playing = false;
+                        ra.loop = true;
                         ra.speed = 1.0f;
                         ra.timeSec = 0.0f;
                         p.defaults[raId] = ra;
@@ -265,6 +265,59 @@ namespace Engine::ECS
                 r.r = std::stof(m[1].str());
                 uint32_t cid = registry.ensureId("Radius");
                 p.defaults.emplace(cid, r);
+            }
+        }
+
+        // Parse defaults: LocomotionClips
+        {
+            std::regex re_loco(R"("LocomotionClips"\s*:\s*\{[\s\S]*?"idleClip"\s*:\s*(\d+)[\s\S]*?"walkClip"\s*:\s*(\d+)[\s\S]*?"runClip"\s*:\s*(\d+)[\s\S]*?\})");
+            std::smatch m;
+            if (std::regex_search(jsonText, m, re_loco))
+            {
+                LocomotionClips clips{};
+                clips.idleClip = static_cast<uint32_t>(std::stoul(m[1].str()));
+                clips.walkClip = static_cast<uint32_t>(std::stoul(m[2].str()));
+                clips.runClip = static_cast<uint32_t>(std::stoul(m[3].str()));
+                uint32_t cid = registry.ensureId("LocomotionClips");
+                p.defaults.emplace(cid, clips);
+            }
+        }
+
+        // Parse defaults: CombatClips
+        {
+            std::regex re_combat(R"("CombatClips"\s*:\s*\{[\s\S]*?"attackStart"\s*:\s*(\d+)[\s\S]*?"attackEnd"\s*:\s*(\d+)[\s\S]*?"damageStart"\s*:\s*(\d+)[\s\S]*?"damageEnd"\s*:\s*(\d+)[\s\S]*?"deathStart"\s*:\s*(\d+)[\s\S]*?"deathEnd"\s*:\s*(\d+)[\s\S]*?\})");
+            std::smatch m;
+            if (std::regex_search(jsonText, m, re_combat))
+            {
+                CombatClips clips{};
+                clips.attackStart = static_cast<uint32_t>(std::stoul(m[1].str()));
+                clips.attackEnd = static_cast<uint32_t>(std::stoul(m[2].str()));
+                clips.damageStart = static_cast<uint32_t>(std::stoul(m[3].str()));
+                clips.damageEnd = static_cast<uint32_t>(std::stoul(m[4].str()));
+                clips.deathStart = static_cast<uint32_t>(std::stoul(m[5].str()));
+                clips.deathEnd = static_cast<uint32_t>(std::stoul(m[6].str()));
+                uint32_t cid = registry.ensureId("CombatClips");
+                p.defaults.emplace(cid, clips);
+            }
+        }
+
+        // If LocomotionClips is provided, default RenderAnimation to idleClip.
+        {
+            const uint32_t locoId = registry.ensureId("LocomotionClips");
+            const uint32_t raId = registry.ensureId("RenderAnimation");
+            auto itLoco = p.defaults.find(locoId);
+            auto itRA = p.defaults.find(raId);
+            if (itLoco != p.defaults.end() && itRA != p.defaults.end() &&
+                std::holds_alternative<LocomotionClips>(itLoco->second) &&
+                std::holds_alternative<RenderAnimation>(itRA->second))
+            {
+                const auto &loco = std::get<LocomotionClips>(itLoco->second);
+                auto ra = std::get<RenderAnimation>(itRA->second);
+                ra.clipIndex = loco.idleClip;
+                ra.timeSec = 0.0f;
+                ra.playing = false;
+                ra.loop = true;
+                itRA->second = ra;
             }
         }
 

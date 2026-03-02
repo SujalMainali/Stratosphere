@@ -143,6 +143,27 @@ namespace Engine::ECS
         ModelHandle handle;
     };
 
+    // Data-driven clip mapping for generic locomotion controllers.
+    // Indices are model-specific and should be provided via JSON.
+    struct LocomotionClips
+    {
+        uint32_t idleClip = 65;
+        uint32_t walkClip = 112;
+        uint32_t runClip = 28;
+    };
+
+    // Data-driven clip mapping for generic combat controllers.
+    // Ranges are inclusive.
+    struct CombatClips
+    {
+        uint32_t attackStart = 36;
+        uint32_t attackEnd = 48;
+        uint32_t damageStart = 52;
+        uint32_t damageEnd = 56;
+        uint32_t deathStart = 61;
+        uint32_t deathEnd = 64;
+    };
+
     // Per-entity animation state (node TRS only; no skinning yet)
     struct RenderAnimation
     {
@@ -189,7 +210,7 @@ namespace Engine::ECS
     };
 
     // Typed defaults per component ID (used by Prefabs/Stores).
-    using DefaultValue = std::variant<Position, Velocity, Health, MoveTarget, MoveSpeed, Radius, Separation, AvoidanceParams, RenderModel, RenderAnimation, Facing, ObstacleRadius, Path, PosePalette, Team, AttackCooldown>;
+    using DefaultValue = std::variant<Position, Velocity, Health, MoveTarget, MoveSpeed, Radius, Separation, AvoidanceParams, RenderModel, LocomotionClips, CombatClips, RenderAnimation, Facing, ObstacleRadius, Path, PosePalette, Team, AttackCooldown>;
     // -----------------------
     // Component Registry
     // -----------------------

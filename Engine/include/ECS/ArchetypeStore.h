@@ -56,6 +56,10 @@ namespace Engine::ECS
                 m_avoidanceParams.emplace_back(AvoidanceParams{});
             if (hasRenderModel())
                 m_renderModels.emplace_back(RenderModel{});
+            if (hasLocomotionClips())
+                m_locomotionClips.emplace_back(LocomotionClips{});
+            if (hasCombatClips())
+                m_combatClips.emplace_back(CombatClips{});
             if (hasRenderAnimation())
                 m_renderAnimations.emplace_back(RenderAnimation{});
             if (hasFacing())
@@ -115,6 +119,10 @@ namespace Engine::ECS
                 swapErase(m_avoidanceParams);
             if (hasRenderModel())
                 swapErase(m_renderModels);
+            if (hasLocomotionClips())
+                swapErase(m_locomotionClips);
+            if (hasCombatClips())
+                swapErase(m_combatClips);
             if (hasRenderAnimation())
                 swapErase(m_renderAnimations);
             if (hasFacing())
@@ -185,6 +193,14 @@ namespace Engine::ECS
                 {
                     m_renderModels[row] = std::get<RenderModel>(kv.second);
                 }
+                else if (std::holds_alternative<LocomotionClips>(kv.second) && hasLocomotionClips())
+                {
+                    m_locomotionClips[row] = std::get<LocomotionClips>(kv.second);
+                }
+                else if (std::holds_alternative<CombatClips>(kv.second) && hasCombatClips())
+                {
+                    m_combatClips[row] = std::get<CombatClips>(kv.second);
+                }
                 else if (std::holds_alternative<RenderAnimation>(kv.second) && hasRenderAnimation())
                 {
                     m_renderAnimations[row] = std::get<RenderAnimation>(kv.second);
@@ -250,6 +266,12 @@ namespace Engine::ECS
         std::vector<RenderModel> &renderModels() { return m_renderModels; }
         const std::vector<RenderModel> &renderModels() const { return m_renderModels; }
 
+        std::vector<LocomotionClips> &locomotionClips() { return m_locomotionClips; }
+        const std::vector<LocomotionClips> &locomotionClips() const { return m_locomotionClips; }
+
+        std::vector<CombatClips> &combatClips() { return m_combatClips; }
+        const std::vector<CombatClips> &combatClips() const { return m_combatClips; }
+
         std::vector<RenderAnimation> &renderAnimations() { return m_renderAnimations; }
         const std::vector<RenderAnimation> &renderAnimations() const { return m_renderAnimations; }
 
@@ -280,6 +302,8 @@ namespace Engine::ECS
         bool hasSeparation() const { return m_hasSeparation; }
         bool hasAvoidanceParams() const { return m_hasAvoidanceParams; }
         bool hasRenderModel() const { return m_hasRenderModel; }
+        bool hasLocomotionClips() const { return m_hasLocomotionClips; }
+        bool hasCombatClips() const { return m_hasCombatClips; }
         bool hasRenderAnimation() const { return m_hasRenderAnimation; }
         bool hasFacing() const { return m_hasFacing; }
         bool hasObstacle() const { return m_hasObstacle; }
@@ -301,6 +325,8 @@ namespace Engine::ECS
             const uint32_t sepId = registry.ensureId("Separation");
             const uint32_t apId = registry.ensureId("AvoidanceParams");
             const uint32_t rmId = registry.ensureId("RenderModel");
+            const uint32_t locoId = registry.ensureId("LocomotionClips");
+            const uint32_t ccId = registry.ensureId("CombatClips");
             const uint32_t raId = registry.ensureId("RenderAnimation");
             const uint32_t faceId = registry.ensureId("Facing");
             const uint32_t obsId = registry.ensureId("Obstacle");
@@ -316,6 +342,8 @@ namespace Engine::ECS
             m_hasSeparation = m_signature.has(sepId);
             m_hasAvoidanceParams = m_signature.has(apId);
             m_hasRenderModel = m_signature.has(rmId);
+            m_hasLocomotionClips = m_signature.has(locoId);
+            m_hasCombatClips = m_signature.has(ccId);
             m_hasRenderAnimation = m_signature.has(raId);
             m_hasFacing = m_signature.has(faceId);
             m_hasObstacle = m_signature.has(obsId);
@@ -343,6 +371,8 @@ namespace Engine::ECS
         std::vector<Separation> m_separations;
         std::vector<AvoidanceParams> m_avoidanceParams;
         std::vector<RenderModel> m_renderModels;
+        std::vector<LocomotionClips> m_locomotionClips;
+        std::vector<CombatClips> m_combatClips;
         std::vector<RenderAnimation> m_renderAnimations;
         std::vector<Facing> m_facings;
         std::vector<ObstacleRadius> m_obstacleRadii;
@@ -361,6 +391,8 @@ namespace Engine::ECS
         bool m_hasSeparation = false;
         bool m_hasAvoidanceParams = false;
         bool m_hasRenderModel = false;
+        bool m_hasLocomotionClips = false;
+        bool m_hasCombatClips = false;
         bool m_hasRenderAnimation = false;
         bool m_hasFacing = false;
         bool m_hasObstacle = false;
