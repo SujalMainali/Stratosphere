@@ -1,13 +1,23 @@
 #pragma once
+
 #include "ECS/SystemFormat.h"
+
 #include <algorithm>
 #include <cmath>
-#include <iostream>
+#include <cstdint>
 #include <vector>
 
 class CommandSystem : public Engine::ECS::SystemBase
 {
 public:
+    struct Config
+    {
+        float spacing = 0.5f;
+        float minWorld = -10000.0f;
+        float maxWorld = 10000.0f;
+        bool log = false;
+    };
+
     CommandSystem()
     {
         // Only command selected, movable units.
@@ -23,6 +33,8 @@ public:
         m_moveTargetId = registry.ensureId("MoveTarget");
     }
 
+    void setConfig(const Config &cfg) { m_cfg = cfg; }
+
     // Set the last clicked target; system will write it to entities on next update.
     void SetGlobalMoveTarget(float x, float y, float z)
     {
@@ -37,17 +49,15 @@ public:
         if (!m_hasPending)
             return;
 
-        constexpr float spacing = 0.5f;
-        constexpr float kMinWorld = -10000.0f;
-        constexpr float kMaxWorld = 10000.0f;
+        const float spacing = m_cfg.spacing;
+        const float kMinWorld = m_cfg.minWorld;
+        const float kMaxWorld = m_cfg.maxWorld;
 
         auto clamp = [](float v, float a, float b)
         { return std::max(a, std::min(v, b)); };
 
         if (m_queryId == Engine::ECS::QueryManager::InvalidQuery)
             m_queryId = ecs.queries.createQuery(required(), excluded(), ecs.stores);
-
-        uint32_t totalSelected = 0;
 
         const auto &q = ecs.queries.get(m_queryId);
         for (uint32_t archetypeId : q.matchingArchetypeIds)
@@ -61,8 +71,6 @@ public:
             const uint32_t selCount = store.size();
             if (selCount == 0)
                 continue;
-
-            totalSelected += selCount;
 
             const uint32_t side = static_cast<uint32_t>(std::ceil(std::sqrt(static_cast<float>(selCount))));
             const float half = (static_cast<float>(side) - 1.0f) * 0.5f;
@@ -83,15 +91,21 @@ public:
                 ecs.markDirty(m_moveTargetId, archetypeId, k);
             }
 
-            std::cout << "[CommandSystem] Selected=" << selCount
-                      << " baseTarget=(" << m_pendingX << "," << m_pendingZ << ")"
-                      << " gridSide=" << side << " spacing=" << spacing << "\n";
+            // Optional logging hook for samples.
+            if (m_cfg.log)
+                onLog(selCount, side, spacing);
         }
 
         m_hasPending = false;
     }
 
+protected:
+    // Samples can override or ignore by keeping log disabled.
+    virtual void onLog(uint32_t /*selectedCount*/, uint32_t /*gridSide*/, float /*spacing*/) {}
+
 private:
+    Config m_cfg{};
+
     bool m_hasPending = false;
     float m_pendingX = 0.0f, m_pendingY = 0.0f, m_pendingZ = 0.0f;
     Engine::ECS::QueryId m_queryId = Engine::ECS::QueryManager::InvalidQuery;

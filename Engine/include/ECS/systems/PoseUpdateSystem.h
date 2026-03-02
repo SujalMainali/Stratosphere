@@ -7,9 +7,6 @@
 #include <cstdint>
 #include <vector>
 
-// PoseUpdateSystem
-// - Recomputes cached pose palettes (node + joint matrices) into ECS::PosePalette.
-// - Uses dirty query keyed off RenderAnimation/RenderModel changes.
 class PoseUpdateSystem : public Engine::ECS::SystemBase
 {
 public:
@@ -30,7 +27,7 @@ public:
         m_renderModelId = registry.ensureId("RenderModel");
     }
 
-    void update(Engine::ECS::ECSContext &ecs, float dt) override
+    void update(Engine::ECS::ECSContext &ecs, float /*dt*/) override
     {
         if (!m_assets)
             return;
@@ -63,9 +60,7 @@ public:
             for (uint32_t row : dirtyRows)
             {
                 if (row >= store->size())
-                {
                     continue;
-                }
 
                 const Engine::ModelHandle handle = renderModels[row].handle;
                 Engine::ModelAsset *asset = m_assets->getModel(handle);
@@ -86,7 +81,6 @@ public:
                                               : 0u;
                 const float timeSec = (!asset->animClips.empty() && anim.playing) ? anim.timeSec : 0.0f;
 
-                // Compute node globals into scratch, then copy into component.
                 asset->evaluatePoseInto(safeClip, timeSec,
                                         m_trsScratch,
                                         m_localsScratch,
@@ -96,7 +90,6 @@ public:
                 out.nodeCount = static_cast<uint32_t>(asset->nodes.size());
                 out.nodePalette = m_globalsScratch;
 
-                // Joint palette
                 out.jointCount = asset->totalJointCount;
                 out.jointPalette.assign(out.jointCount, glm::mat4(1.0f));
 
@@ -134,7 +127,6 @@ private:
     uint32_t m_renderAnimId = Engine::ECS::ComponentRegistry::InvalidID;
     uint32_t m_renderModelId = Engine::ECS::ComponentRegistry::InvalidID;
 
-    // Scratch buffers reused across rows.
     std::vector<Engine::ModelAsset::NodeTRS> m_trsScratch;
     std::vector<glm::mat4> m_localsScratch;
     std::vector<glm::mat4> m_globalsScratch;

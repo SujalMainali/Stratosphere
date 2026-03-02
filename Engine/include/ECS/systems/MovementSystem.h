@@ -1,30 +1,23 @@
 #pragma once
 /*
-  MovementSystem.h (SampleApp-side)
-  ---------------------------------
+  MovementSystem
+  --------------
   Purpose:
-    - Moves entities: position += velocity * dt for any archetype store that has both Position and Velocity
+    - Moves entities: position += velocity * dt for any store that has both Position and Velocity
       and does not contain excluded tags.
-
-  How to customize:
-    - Change required/excluded component names in the constructor to reflect the game rules.
-    - Modify update() to implement your movement logic (e.g., acceleration).
 */
 
-#include "ECS/SystemFormat.h" // IGameplaySystem, SystemBase
+#include "ECS/SystemFormat.h"
 #include "ECS/Components.h"
+
 #include <cmath>
+
 class MovementSystem : public Engine::ECS::SystemBase
 {
 public:
     MovementSystem()
     {
-        // Declare which components this system needs/excludes by name.
-        // Build masks from these names in buildMasks(ComponentRegistry&).
         setRequiredNames({"Position", "Velocity"});
-
-        // Optional excluded tags/components (define them in your registry if you use them).
-        // Comment out if not used.
         setExcludedNames({"Disabled", "Dead"});
     }
 
@@ -37,10 +30,6 @@ public:
         m_velocityId = registry.ensureId("Velocity");
     }
 
-    // Called once after creation: registry will resolve names to IDs and build masks.
-    // buildMasks is inherited from SystemBase; no override needed unless custom behavior is required.
-
-    // Per-frame update over all matching stores.
     void update(Engine::ECS::ECSContext &ecs, float dt) override
     {
         if (m_queryId == Engine::ECS::QueryManager::InvalidQuery)
@@ -66,9 +55,6 @@ public:
             auto &positions = const_cast<std::vector<Engine::ECS::Position> &>(store.positions());
             auto &velocities = const_cast<std::vector<Engine::ECS::Velocity> &>(store.velocities());
 
-            const bool canLogTarget = store.hasMoveTarget();
-            const auto *targetsPtr = canLogTarget ? &store.moveTargets() : nullptr;
-
             for (uint32_t i : dirtyRows)
             {
                 if (i >= n)
@@ -78,8 +64,6 @@ public:
                 if (velMag1 <= 1e-6f)
                     continue;
 
-                const auto before = positions[i];
-
                 positions[i].x += velocities[i].x * dt;
                 positions[i].y += velocities[i].y * dt;
                 positions[i].z += velocities[i].z * dt;
@@ -88,16 +72,6 @@ public:
 
                 // Keep movers active: movement must run every frame while velocity is non-zero.
                 ecs.markDirty(m_velocityId, archetypeId, i);
-
-                const bool targetActive = (targetsPtr && (*targetsPtr)[i].active != 0);
-                const bool moving = (std::fabs(velocities[i].x) + std::fabs(velocities[i].y) + std::fabs(velocities[i].z)) > 1e-6f;
-                if (targetActive || moving)
-                {
-                    const auto after = positions[i];
-                    const float dx = after.x - before.x;
-                    const float dy = after.y - before.y;
-                    const float dz = after.z - before.z;
-                }
             }
         }
     }

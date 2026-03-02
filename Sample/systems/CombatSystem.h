@@ -21,7 +21,7 @@
 
 #include "ECS/SystemFormat.h"
 #include "ECS/Components.h"
-#include "systems/SpatialIndexSystem.h"
+#include "ECS/systems/SpatialIndexSystem.h"
 #include "assets/AssetManager.h"
 
 #include <algorithm>
@@ -457,9 +457,9 @@ public:
                         float jitter = 1.0f + m_realDist(m_rng) * m_cfg.cooldownJitter;
                         cooldowns[row].timer = cooldowns[row].interval * jitter;
 
-                        // Always play attack animation
-                        uint32_t attackClip = CombatAnims::ATTACK_START +
-                                              (m_rng() % (CombatAnims::ATTACK_END - CombatAnims::ATTACK_START + 1));
+                        // Always use the same attack animation clip to avoid flashing
+                        // caused by switching between multiple attack clips.
+                        const uint32_t attackClip = CombatAnims::ATTACK_START;
                         attackAnims.push_back({myEntity, attackClip, 1.5f, false});
 
                         // --- Roll hit / miss ---

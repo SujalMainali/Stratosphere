@@ -9,6 +9,8 @@
   Requirements:
     - Components present in stores: "Position", "Velocity", "Radius", "AvoidanceParams".
         - Optional component: "Separation" (extra desired spacing beyond radii).
+        - Optional component: "MoveTarget" (used only to keep avoidance awake near goals).
+        - Optional component: "Team" (used only if enabled in config).
     - SpatialIndexSystem must have run earlier in the frame (grid built).
     - Steering should have already produced a "preferred" velocity, stored in Velocity.
       This system keeps final speeds close to that magnitude.
@@ -21,20 +23,25 @@
 #include "ECS/Components.h"
 #include "ECS/ArchetypeStore.h"
 
-// The grid index system for neighbor queries
-#include "systems/SpatialIndexSystem.h"
+#include "ECS/systems/SpatialIndexSystem.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <cmath>
+#include <cstdint>
 
 class LocalAvoidanceSystem : public Engine::ECS::SystemBase
 {
 public:
+    struct Config
+    {
+        // If true and both entities have Team, Separation is only applied to same-team neighbors.
+        // If false, Separation applies to all neighbors regardless of Team.
+        bool useTeamForSeparation = true;
+    };
+
     LocalAvoidanceSystem(const SpatialIndexSystem *grid = nullptr)
         : m_grid(grid)
     {
-        // Require the data we adjust/read
         setRequiredNames({"Position", "Velocity", "Radius", "AvoidanceParams"});
         setExcludedNames({"Disabled", "Dead"});
     }
@@ -50,6 +57,7 @@ public:
     }
 
     void setGrid(const SpatialIndexSystem *grid) { m_grid = grid; }
+    void setConfig(const Config &cfg) { m_cfg = cfg; }
 
     void update(Engine::ECS::ECSContext &ecs, float dt) override
     {
@@ -94,7 +102,6 @@ public:
 
         if (m_queryId == Engine::ECS::QueryManager::InvalidQuery)
         {
-            // Wake avoidance when movement happens (Position/Velocity), and also when targets change.
             Engine::ECS::ComponentMask dirty;
             dirty.set(m_positionId);
             dirty.set(m_velocityId);
@@ -189,7 +196,11 @@ public:
                     const bool nHasVel = nStore->hasVelocity();
 
                     float desiredSep = 0.0f;
-                    if (!teamsPtr || !nHasTeam)
+                    if (!sepsPtr)
+                    {
+                        desiredSep = 0.0f;
+                    }
+                    else if (!m_cfg.useTeamForSeparation || !teamsPtr || !nHasTeam)
                     {
                         desiredSep = sepSelf + (nHasSep ? nStore->separations()[nRow].value : 0.0f);
                     }
@@ -294,8 +305,6 @@ public:
                     continue;
                 }
 
-                // If forces cancel out (rare but possible in symmetric crowds), pick a stable per-entity
-                // direction so overlapped stacks can still resolve without introducing frame-to-frame noise.
                 const float accL2 = accDirX * accDirX + accDirZ * accDirZ;
                 if (accL2 <= 1e-12f)
                 {
@@ -353,14 +362,15 @@ public:
                 v.x = lerp(vPrefX, vNewX, t);
                 v.z = lerp(vPrefZ, vNewZ, t);
 
-                // Keep row active while avoidance is producing corrections.
                 ecs.markDirty(m_velocityId, archetypeId, row);
             }
         }
     }
 
 private:
+    Config m_cfg{};
     const SpatialIndexSystem *m_grid = nullptr; // not owned
+
     uint32_t m_positionId = Engine::ECS::ComponentRegistry::InvalidID;
     uint32_t m_velocityId = Engine::ECS::ComponentRegistry::InvalidID;
     uint32_t m_moveTargetId = Engine::ECS::ComponentRegistry::InvalidID;

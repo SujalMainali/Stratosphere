@@ -36,6 +36,7 @@ public:
 
     void update(Engine::ECS::ECSContext &ecs, float dt) override
     {
+        (void)dt;
         if (!m_assets || !m_renderer || !m_camera)
             return;
 

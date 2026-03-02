@@ -1,6 +1,8 @@
 #pragma once
+
 #include "ECS/SystemFormat.h"
 #include "ECS/Components.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -29,7 +31,6 @@ public:
     {
         if (m_queryId == Engine::ECS::QueryManager::InvalidQuery)
         {
-            // Re-steer when the target changes, and also when position changes (movement).
             Engine::ECS::ComponentMask dirty;
             dirty.set(m_positionId);
             dirty.set(m_moveTargetId);
@@ -39,7 +40,6 @@ public:
         auto dist2 = [](float x, float z)
         { return x * x + z * z; };
 
-        // Gameplay uses meters; stop once we're within a small radius.
         const float arrivalRadius2 = 0.25f;    // 0.5^2
         const float waypointRadius2 = 0.0625f; // 0.25^2
 
@@ -77,13 +77,8 @@ public:
                 auto &facing = facings[i];
 
                 if (!tgt.active)
-                {
-                    // No active movement intent. Whoever deactivated MoveTarget is responsible
-                    // for clearing velocity if a hard stop is desired (e.g., arrival/combat).
                     continue;
-                }
 
-                // Determine target position: waypoint or final target
                 float tx = tgt.x;
                 float tz = tgt.z;
                 bool isFinal = true;
@@ -99,21 +94,18 @@ public:
                 float dz = tz - pos.z;
                 float d2 = dist2(dx, dz);
 
-                // Check arrival (squared distance)
                 float radiusToCheck2 = isFinal ? arrivalRadius2 : waypointRadius2;
 
                 if (d2 <= radiusToCheck2)
                 {
                     if (isFinal)
                     {
-                        // Arrived at final destination
                         vel.x = vel.y = vel.z = 0.0f;
                         tgt.active = 0;
                         path.valid = false;
                     }
                     else
                     {
-                        // Arrived at waypoint — advance to next
                         path.current++;
                         if (path.current < path.count)
                         {
@@ -125,7 +117,6 @@ public:
                         }
                         else
                         {
-                            // Path finished, steer to final target
                             path.valid = false;
                             tx = tgt.x;
                             tz = tgt.z;
@@ -135,7 +126,6 @@ public:
                         }
                     }
 
-                    // If we just arrived at the final destination, stop and mark dirty
                     if (isFinal)
                     {
                         ecs.markDirty(m_velocityId, archetypeId, i);
@@ -144,7 +134,6 @@ public:
                     }
                 }
 
-                // Steer toward target
                 if (d2 > 1e-8f)
                 {
                     float dist = std::sqrt(d2);
@@ -154,7 +143,6 @@ public:
 
                     float speed = spd.value;
 
-                    // Inertia / Smoothing: accelerate toward desired velocity
                     float targetVx = dx * speed;
                     float targetVz = dz * speed;
 
@@ -167,15 +155,12 @@ public:
                     vel.z += diffZ * acceleration * dt;
                     vel.y = 0.0f;
 
-                    // Update Facing based on intended travel direction.
-                    // This avoids jitter when LocalAvoidance perturbs velocity later in the frame.
                     facing.yaw = std::atan2(dx, dz);
                     ecs.markDirty(m_facingId, archetypeId, i);
                 }
 
                 ecs.markDirty(m_velocityId, archetypeId, i);
 
-                // Keep active targets updating every frame
                 if (tgt.active)
                     ecs.markDirty(m_moveTargetId, archetypeId, i);
             }

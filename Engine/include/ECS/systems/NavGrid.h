@@ -8,9 +8,10 @@
     - Used by PathfindingSystem to plan paths.
 */
 
-#include <vector>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <vector>
 
 class NavGrid
 {
@@ -39,22 +40,23 @@ public:
         width = static_cast<int>(std::ceil(w / cellSize));
         height = static_cast<int>(std::ceil(h / cellSize));
 
-        if (width < 1) width = 1;
-        if (height < 1) height = 1;
+        if (width < 1)
+            width = 1;
+        if (height < 1)
+            height = 1;
 
         blocked.assign(static_cast<size_t>(width * height), 0);
     }
+
     // Check if a straight line from (x0, z0) to (x1, z1) is clear of obstacles.
     // Coordinates are in WORLD space.
     bool lineCheck(float x0, float z0, float x1, float z1) const
     {
-        // Convert to grid coordinates
         int gx0 = worldToGridX(x0);
         int gz0 = worldToGridZ(z0);
         int gx1 = worldToGridX(x1);
         int gz1 = worldToGridZ(z1);
 
-        // Bresenham's Line Algorithm
         int dx = std::abs(gx1 - gx0);
         int dz = std::abs(gz1 - gz0);
         int sx = (gx0 < gx1) ? 1 : -1;
@@ -63,9 +65,8 @@ public:
 
         while (true)
         {
-            // Check current cell
             if (!isWalkable(gx0, gz0))
-                return false; // Hit obstacle
+                return false;
 
             if (gx0 == gx1 && gz0 == gz1)
                 break;
@@ -117,8 +118,6 @@ public:
         return blocked[gz * width + gx] == 0;
     }
 
-    /// Line-of-sight check entirely in grid space (avoids float↔int conversions).
-    /// Bresenham's from (gx0,gz0) to (gx1,gz1).  Returns true if every cell is walkable.
     bool lineCheckGrid(int gx0, int gz0, int gx1, int gz1) const
     {
         int dx = std::abs(gx1 - gx0);
@@ -134,8 +133,16 @@ public:
             if (gx0 == gx1 && gz0 == gz1)
                 break;
             int e2 = 2 * err;
-            if (e2 > -dz) { err -= dz; gx0 += sx; }
-            if (e2 < dx)  { err += dx; gz0 += sz; }
+            if (e2 > -dz)
+            {
+                err -= dz;
+                gx0 += sx;
+            }
+            if (e2 < dx)
+            {
+                err += dx;
+                gz0 += sz;
+            }
         }
         return true;
     }
@@ -152,7 +159,6 @@ public:
         gzMin = std::max(0, gzMin);
         gzMax = std::min(height - 1, gzMax);
 
-        // Simple bounding box loop, then circle check
         for (int gz = gzMin; gz <= gzMax; ++gz)
         {
             for (int gx = gxMin; gx <= gxMax; ++gx)

@@ -6,22 +6,22 @@
     - Finds A* path for units that have a MoveTarget but no valid Path.
     - Updates Path component with waypoints.
     - Only runs when needed (dirty query on MoveTarget).
-  
+
   Optimizations:
-    - Generation counter avoids clearing 160K-element arrays per A* call.
+    - Generation counter avoids clearing arrays per A* call.
     - Reusable member buffers avoid heap allocations per call.
     - Dirty query avoids scanning all entities every frame.
-    - Capped lookahead in path smoothing avoids O(W²×D) line checks.
-    - Weighted A* (ε=1.2) explores ~30% fewer nodes for near-optimal paths.
-    - Compact index-based NodeEntry (8 bytes) for better cache utilization.
+    - Capped lookahead in path smoothing avoids expensive line checks.
+    - Weighted A* (ε=1.2) explores fewer nodes for near-optimal paths.
     - Grid-space lineCheck avoids float↔int conversions in smoothing.
     - Target cell validation with spiral fallback prevents wasted A* on blocked goals.
 */
 
 #include "ECS/SystemFormat.h"
-#include "NavGrid.h"
-#include <cmath>
+#include "ECS/systems/NavGrid.h"
+
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -43,13 +43,11 @@ public:
         m_moveTargetId = registry.ensureId("MoveTarget");
     }
 
-    void update(Engine::ECS::ECSContext &ecs, float dt) override
+    void update(Engine::ECS::ECSContext &ecs, float /*dt*/) override
     {
         if (!m_grid)
             return;
 
-        // --- Fix #5: Use dirty query keyed on MoveTarget so we only visit entities
-        //     whose target actually changed, instead of scanning all stores. ---
         if (m_queryId == Engine::ECS::QueryManager::InvalidQuery)
         {
             Engine::ECS::ComponentMask dirty;
@@ -89,17 +87,12 @@ public:
                     continue;
                 }
 
-                // If path is already valid and we haven't reached the end, skip replanning
                 if (path.valid && path.current < path.count)
                     continue;
 
                 if (path.valid && path.current >= path.count)
-                {
-                    // Path finished. Let Steering handle final approach.
                     continue;
-                }
 
-                // Plan path!
                 runAStar(pos, tgt, path);
             }
         }
@@ -110,32 +103,24 @@ private:
     Engine::ECS::QueryId m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     uint32_t m_moveTargetId = Engine::ECS::ComponentRegistry::InvalidID;
 
-    // --- Fix #2: Generation counter to avoid clearing full grid arrays ---
-    // Instead of std::fill over 160K elements, we bump a generation.
-    // A cell is "unvisited" if m_genStamp[idx] != m_currentGen.
     uint32_t m_currentGen = 0;
-    std::vector<uint32_t> m_genStamp;  // per-cell generation stamp
-    std::vector<float>    m_gScores;   // g-costs (valid only when genStamp matches)
-    std::vector<int>      m_cameFrom;  // parent index
-    // closed set: a cell is closed when m_closedGen[idx] == m_currentGen
+    std::vector<uint32_t> m_genStamp;
+    std::vector<float> m_gScores;
+    std::vector<int> m_cameFrom;
     std::vector<uint32_t> m_closedGen;
 
-    // --- Fix #3: Reusable buffers to avoid heap allocations per A* call ---
     struct NodeEntry
     {
-        int   idx;   // flat cell index (= z * width + x) — 8 bytes total, cache-friendly
+        int idx;
         float fCost;
         bool operator>(const NodeEntry &o) const { return fCost > o.fCost; }
     };
-    std::vector<NodeEntry> m_heapBuf; // backing storage for priority queue
-    std::vector<int> m_pathIndices;   // backtracked cell indices (raw)
-    std::vector<int> m_smoothedIdx;   // smoothed cell indices
+    std::vector<NodeEntry> m_heapBuf;
+    std::vector<int> m_pathIndices;
+    std::vector<int> m_smoothedIdx;
 
-    // Weighted A*: epsilon > 1.0 trades optimality for speed.
-    // 1.2 means paths are at most 20% longer than optimal — great for games.
     static constexpr float kEpsilon = 1.2f;
 
-    // Heuristic: Octile distance
     float heuristic(int x1, int z1, int x2, int z2) const
     {
         int dx = std::abs(x1 - x2);
@@ -155,9 +140,8 @@ private:
         }
     }
 
-    // Check if a cell has been visited this generation
     bool isVisited(int idx) const { return m_genStamp[idx] == m_currentGen; }
-    bool isClosed(int idx) const  { return m_closedGen[idx] == m_currentGen; }
+    bool isClosed(int idx) const { return m_closedGen[idx] == m_currentGen; }
 
     float getG(int idx) const
     {
@@ -181,16 +165,18 @@ private:
         const int W = m_grid->width;
         const int H = m_grid->height;
 
-        auto idx = [W](int x, int z) { return z * W + x; };
-        auto idxToX = [W](int i) { return i % W; };
-        auto idxToZ = [W](int i) { return i / W; };
+        auto idx = [W](int x, int z)
+        { return z * W + x; };
+        auto idxToX = [W](int i)
+        { return i % W; };
+        auto idxToZ = [W](int i)
+        { return i / W; };
 
         const int startX = m_grid->worldToGridX(startPos.x);
         const int startZ = m_grid->worldToGridZ(startPos.z);
         int targetX = std::max(0, std::min(W - 1, m_grid->worldToGridX(target.x)));
         int targetZ = std::max(0, std::min(H - 1, m_grid->worldToGridZ(target.z)));
 
-        // --- Target validation: if target cell is blocked, spiral-search for nearest walkable ---
         if (!m_grid->isWalkable(targetX, targetZ))
         {
             bool relocated = false;
@@ -200,11 +186,13 @@ private:
                 {
                     for (int dz = -r; dz <= r && !relocated; ++dz)
                     {
-                        if (std::abs(dx) != r && std::abs(dz) != r) continue; // only ring
+                        if (std::abs(dx) != r && std::abs(dz) != r)
+                            continue;
                         int nx = targetX + dx, nz = targetZ + dz;
                         if (m_grid->isWalkable(nx, nz))
                         {
-                            targetX = nx; targetZ = nz;
+                            targetX = nx;
+                            targetZ = nz;
                             relocated = true;
                         }
                     }
@@ -213,14 +201,13 @@ private:
             if (!relocated)
             {
                 outPath.valid = false;
-                return; // No reachable cell near target
+                return;
             }
         }
 
         const int startIdx = idx(startX, startZ);
         const int targetIdx = idx(targetX, targetZ);
 
-        // Same cell — no path needed
         if (startIdx == targetIdx)
         {
             outPath.valid = true;
@@ -229,7 +216,6 @@ private:
             return;
         }
 
-        // Line-of-sight shortcut: skip A* if straight line is clear
         if (m_grid->lineCheckGrid(startX, startZ, targetX, targetZ))
         {
             outPath.valid = true;
@@ -238,7 +224,6 @@ private:
             return;
         }
 
-        // --- Generation counter: bump instead of clearing arrays ---
         ensureGridBuffers();
         ++m_currentGen;
         if (m_currentGen == 0)
@@ -248,7 +233,6 @@ private:
             m_currentGen = 1;
         }
 
-        // --- Pre-reserve heap to avoid early reallocs ---
         m_heapBuf.clear();
         if (m_heapBuf.capacity() < 256)
             m_heapBuf.reserve(256);
@@ -298,9 +282,8 @@ private:
                 break;
             }
 
-            // Track closest-to-target (derive h from f - g to avoid recomputing heuristic)
             const float curG = getG(current.idx);
-            const float curH = (current.fCost / kEpsilon) - curG + 0.001f; // approximate h
+            const float curH = (current.fCost / kEpsilon) - curG + 0.001f;
             if (curH < closestH)
             {
                 closestH = curH;
@@ -315,13 +298,15 @@ private:
                 const int nx = cx + dxAddr[i];
                 const int nz = cz + dzAddr[i];
 
-                if (nx < 0 || nx >= W || nz < 0 || nz >= H) continue;
+                if (nx < 0 || nx >= W || nz < 0 || nz >= H)
+                    continue;
 
                 const int nIdx = idx(nx, nz);
-                if (m_grid->blocked[nIdx]) continue; // direct array access (faster than isWalkable)
-                if (isClosed(nIdx)) continue;
+                if (m_grid->blocked[nIdx])
+                    continue;
+                if (isClosed(nIdx))
+                    continue;
 
-                // Diagonal corner check
                 if (i >= 4)
                 {
                     if (m_grid->blocked[idx(cx, nz)] || m_grid->blocked[idx(nx, cz)])
@@ -339,7 +324,6 @@ private:
             }
         }
 
-        // Reconstruct path (flat indices)
         int backIdx = found ? targetIdx : closestIdx;
         m_pathIndices.clear();
 
@@ -347,27 +331,26 @@ private:
         {
             m_pathIndices.push_back(backIdx);
             const int pIdx = m_cameFrom[backIdx];
-            if (pIdx < 0) break;
+            if (pIdx < 0)
+                break;
             backIdx = pIdx;
-            if (m_pathIndices.size() > 200) break;
+            if (m_pathIndices.size() > 200)
+                break;
         }
 
         std::reverse(m_pathIndices.begin(), m_pathIndices.end());
 
-        // --- String Pulling (grid-space lineCheck, capped lookahead) ---
-        // Prepend start to get full corridor
         m_smoothedIdx.clear();
         m_smoothedIdx.reserve(m_pathIndices.size() + 1);
 
         constexpr size_t kMaxLookahead = 16;
 
-        // Use startIdx as anchor; walk forward through m_pathIndices
         int anchorX = startX, anchorZ = startZ;
         size_t pi = 0;
 
         while (pi < m_pathIndices.size())
         {
-            size_t bestAdvance = pi; // "next" at minimum
+            size_t bestAdvance = pi;
             const size_t maxCheck = std::min(pi + kMaxLookahead + 1, m_pathIndices.size());
 
             for (size_t j = pi + 1; j < maxCheck; ++j)
@@ -386,20 +369,19 @@ private:
             pi = bestAdvance + 1;
         }
 
-        // Ensure the last smoothed point is the final path node
         if (!m_smoothedIdx.empty() && !m_pathIndices.empty() &&
             m_smoothedIdx.back() != m_pathIndices.back())
         {
             m_smoothedIdx.push_back(m_pathIndices.back());
         }
 
-        // Fill waypoints; use exact target coords for the final one.
         outPath.count = 0;
         outPath.current = 0;
 
         for (size_t si = 0; si < m_smoothedIdx.size(); ++si)
         {
-            if (outPath.count >= Engine::ECS::Path::MAX_WAYPOINTS) break;
+            if (outPath.count >= Engine::ECS::Path::MAX_WAYPOINTS)
+                break;
 
             const bool isLast = (si == m_smoothedIdx.size() - 1);
             if (isLast)
