@@ -141,6 +141,8 @@ public:
 
                 auto &p = positions[row];
                 auto &v = velocities[row];
+                const float vOldX = v.x;
+                const float vOldZ = v.z;
                 const auto &r = radii[row];
                 const auto &ap = params[row];
                 const float sepSelf = sepsPtr ? (*sepsPtr)[row].value : 0.0f;
@@ -308,9 +310,13 @@ public:
                 {
                     if (!hasActiveTarget)
                     {
-                        v.x = 0.0f;
-                        v.z = 0.0f;
-                        ecs.markDirty(m_velocityId, archetypeId, row);
+                        // Only force-stop + dirty if we were actually moving.
+                        if (std::fabs(v.x) + std::fabs(v.z) > 1e-6f)
+                        {
+                            v.x = 0.0f;
+                            v.z = 0.0f;
+                            ecs.markDirty(m_velocityId, archetypeId, row);
+                        }
                     }
                     continue;
                 }
@@ -384,7 +390,12 @@ public:
                     }
                 }
 
-                ecs.markDirty(m_velocityId, archetypeId, row);
+                // Only mark Velocity dirty if it actually changed.
+                const float dv1 = std::fabs(v.x - vOldX) + std::fabs(v.z - vOldZ);
+                if (dv1 > 1e-6f)
+                {
+                    ecs.markDirty(m_velocityId, archetypeId, row);
+                }
             }
         }
     }
