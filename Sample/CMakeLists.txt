@@ -7,7 +7,6 @@ add_executable(SampleApp
     src/ScenarioSpawner.cpp
     src/update.cpp
     src/VerifyLoadSModel.cpp
-    src/MenuManager.cpp
 )
 target_link_libraries(SampleApp PRIVATE Engine)
 target_link_libraries(SampleApp PRIVATE nlohmann_json::nlohmann_json)

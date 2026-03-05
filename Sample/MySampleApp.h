@@ -2,7 +2,6 @@
 
 #include "Engine/Application.h"
 #include "Engine/Camera.h"
-#include "src/MenuManager.h"
 
 #include "update.h"
 
@@ -69,17 +68,8 @@ private:
 
     Sample::SystemRunner m_systems;
 
-    // Menu
-    MenuManager m_menu;
-
     // True once a new game is started or a save is loaded.
-    bool m_inGame = false;
-
-    // ImGui Vulkan backend uses ImTextureID as a VkDescriptorSet.
-    // When the window is resized, Application recreates ImGui (descriptor pool),
-    // which invalidates previously cached ImTextureID values. This flag triggers
-    // re-registering textures on the next frame.
-    bool m_reloadMenuTextures = false;
+    bool m_inGame = true;
 
     // Small save slot filename
     std::string m_saveFilePath = "sample_save.json";

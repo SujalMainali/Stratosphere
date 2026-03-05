@@ -27,7 +27,6 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "MenuManager.h"
 #include <GLFW/glfw3.h>
 
 using json = nlohmann::json;
@@ -40,44 +39,6 @@ MySampleApp::MySampleApp() : Engine::Application()
         GetVulkanContext().GetGraphicsQueue(),
         GetVulkanContext().GetGraphicsQueueFamilyIndex());
 
-    m_menu.SetTextureLoader([this](const std::string &relpath) -> ImTextureID
-                            {
-            if (!m_assets)
-                return nullptr;
-
-            // Load into an Engine texture asset
-            Engine::TextureHandle th = m_assets->loadTextureFromFile(relpath);
-            if (!th.isValid())
-                return nullptr;
-
-            Engine::TextureAsset* ta = m_assets->getTexture(th);
-            if (!ta)
-                return nullptr;
-
-            VkSampler sampler = ta->getSampler();
-            VkImageView view = ta->getView();
-            if (sampler == VK_NULL_HANDLE || view == VK_NULL_HANDLE)
-                return nullptr;
-
-            // Register with ImGui (uses ImGui_ImplVulkan_AddTexture internally)
-            Engine::ImGuiLayer* layer = GetImGuiLayer();
-            if (!layer)
-                return nullptr;
-
-            return layer->addTexture(sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL); });
-    // Optionally let the MenuManager know whether a save exists (so it can enable "Continue")
-    m_menu.SetHasSaveFile(HasSaveFile());
-    m_menu.SetMode(MenuManager::Mode::MainMenu);
-
-    auto loader = m_menu.GetTextureLoader();
-    if (loader)
-    {
-        // Use same relative path convention as MenuManager (example uses "assets/raw/...")
-        ImTextureID bg = loader("assets/raw/menu.png");
-        ImTextureID tnew = loader("assets/raw/newgame.png");
-        ImTextureID tcont = loader("assets/raw/continuegame.png");
-        ImTextureID texit = loader("assets/raw/exit.png");
-    }
     // RTS camera initialization — raised for the larger maze map.
     m_rtsCam.focus = {0.0f, 0.0f, 0.0f};
     m_rtsCam.yawDeg = -45.0f;
@@ -153,12 +114,6 @@ MySampleApp::MySampleApp() : Engine::Application()
     SetEventCallback([this](const std::string &e)
                      { this->OnEvent(e); });
 
-    // Detect whether a save exists so MenuManager can show Continue
-    m_menu.SetHasSaveFile(HasSaveFile());
-
-    // Hook up event callback (already present in file previously)
-    SetEventCallback([this](const std::string &e)
-                     { this->OnEvent(e); });
 }
 
 MySampleApp::~MySampleApp() = default;
@@ -179,11 +134,6 @@ void MySampleApp::Close()
 
 void MySampleApp::OnUpdate(Engine::TimeStep ts)
 {
-    // When the in-game pause menu is visible, freeze the simulation so "Continue"
-    // resumes exactly from the state when Escape was pressed.
-    if (m_inGame && m_menu.IsVisible())
-        return;
-
     auto &win = GetWindow();
     const float aspect = static_cast<float>(win.GetWidth()) / static_cast<float>(win.GetHeight());
 
@@ -496,28 +446,8 @@ void MySampleApp::OnRender()
     if (!layer || !layer->isInitialized() || ImGui::GetCurrentContext() == nullptr)
         return;
 
-    if (m_reloadMenuTextures)
-    {
-        // After swapchain resize, Application recreates the ImGui layer and its descriptor pool.
-        // Any cached ImTextureID (VkDescriptorSet) from before the resize becomes invalid.
-        auto loader = m_menu.GetTextureLoader();
-        if (loader)
-            m_menu.SetTextureLoader(loader);
-        m_reloadMenuTextures = false;
-    }
-
-    // Apply fade-in effect to game world rendering
-    if (m_menu.IsFadingToGame())
-    {
-        float alpha = m_menu.GetGameAlpha();
-        // Apply alpha to your render pass or use a post-process overlay
-        // Example: render a black quad with inverse alpha over everything
-        // or multiply your fragment shader output by alpha
-    }
-    m_menu.OnImGuiFrame();
-
     // ---- Battle HUD: Team health bars ----
-    if (m_inGame && !m_menu.IsVisible())
+    if (m_inGame)
     {
         const auto &combat = m_systems.GetCombatSystem();
         const auto &teamA = combat.getTeamStats(0);
@@ -672,44 +602,6 @@ void MySampleApp::OnRender()
         ImGui::End();
     }
 
-    // If menu produced a result, handle it
-    if (m_menu.GetResult() != MenuManager::Result::None)
-    {
-        auto res = m_menu.GetResult();
-        m_menu.ClearResult();
-
-        if (res == MenuManager::Result::NewGame)
-        {
-            std::remove(m_saveFilePath.c_str());
-            m_menu.SetHasSaveFile(false);
-
-            m_inGame = true;
-
-            // Start fade-in effect instead of just hiding
-            m_menu.StartGameFadeIn();
-
-            // optionally reset game state
-        }
-        else if (res == MenuManager::Result::ContinueGame)
-        {
-            if (m_menu.GetMode() == MenuManager::Mode::PauseMenu)
-            {
-                // Resume the current game state
-                m_menu.Hide();
-            }
-            else
-            {
-                // Main menu: load from disk and enter game
-                LoadGameState();
-                m_inGame = true;
-                m_menu.Hide();
-            }
-        }
-        else if (res == MenuManager::Result::Exit)
-        {
-            std::exit(0); // Quick exit - no GPU wait, immediate termination
-        }
-    }
 }
 
 void MySampleApp::setupECSFromPrefabs()
@@ -831,13 +723,6 @@ void MySampleApp::OnEvent(const std::string &name)
     std::string evt;
     iss >> evt;
 
-    // If the pause menu is open, ignore gameplay mouse input.
-    if (m_inGame && m_menu.IsVisible())
-    {
-        if (evt == "MouseButtonLeftDown" || evt == "MouseButtonLeftUp" || evt == "MouseButtonRightDown" || evt == "MouseButtonRightUp" || evt == "MouseScroll")
-            return;
-    }
-
     if (evt == "MouseButtonLeftDown")
     {
         // Left click is reserved for camera drag/pan only.
@@ -872,32 +757,8 @@ void MySampleApp::OnEvent(const std::string &name)
         return;
     }
 
-    if (evt == "EscapePressed")
-    {
-        if (!m_inGame)
-        {
-            // On the main menu, ignore Escape (engine no longer force-quits).
-            return;
-        }
-
-        // Toggle pause menu.
-        if (m_menu.IsVisible())
-        {
-            m_menu.Hide();
-        }
-        else
-        {
-            m_menu.SetMode(MenuManager::Mode::PauseMenu);
-            m_menu.Show();
-        }
-        return;
-    }
-
     if (name == "WindowResize")
     {
-        // Application handles recreating swapchain/renderer/ImGui.
-        // We just mark UI textures for re-registration next render.
-        m_reloadMenuTextures = true;
         return;
     }
 }
