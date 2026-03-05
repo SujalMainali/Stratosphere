@@ -40,13 +40,27 @@ public:
         auto dist2 = [](float x, float z)
         { return x * x + z * z; };
 
+        auto wrapPi = [](float a)
+        {
+            constexpr float kPi = 3.14159265358979323846f;
+            constexpr float kTwoPi = 6.28318530717958647692f;
+            while (a > kPi)
+                a -= kTwoPi;
+            while (a < -kPi)
+                a += kTwoPi;
+            return a;
+        };
+
         // Final target handling:
         // - Small stop radius prevents ping-pong.
         // - Slow radius provides smooth deceleration near goal.
         const float stopRadius2 = 0.04f; // 0.2^2
         const float slowRadius = 2.0f;   // meters
         const float slowRadius2 = slowRadius * slowRadius;
-        const float waypointRadius2 = 0.0625f; // 0.25^2
+        const float waypointRadius2 = 0.30f; // 0.25^2
+
+        // Limit turn speed to prevent jittery yaw flipping in dense obstacle fields.
+        const float maxTurnRate = 10.0f; // rad/s
 
         const auto &q = ecs.queries.get(m_queryId);
         for (uint32_t archetypeId : q.matchingArchetypeIds)
@@ -189,14 +203,18 @@ public:
                     vel.z += diffZ * acceleration * dt;
                     vel.y = 0.0f;
 
-                    facing.yaw = std::atan2(dx, dz);
+                    const float desiredYaw = std::atan2(dx, dz);
+                    if (std::isfinite(desiredYaw) && std::isfinite(facing.yaw) && dt > 0.0f)
+                    {
+                        float delta = wrapPi(desiredYaw - facing.yaw);
+                        const float maxDelta = maxTurnRate * dt;
+                        delta = std::max(-maxDelta, std::min(maxDelta, delta));
+                        facing.yaw = wrapPi(facing.yaw + delta);
+                    }
                     ecs.markDirty(m_facingId, archetypeId, i);
                 }
 
                 ecs.markDirty(m_velocityId, archetypeId, i);
-
-                if (tgt.active)
-                    ecs.markDirty(m_moveTargetId, archetypeId, i);
             }
         }
     }

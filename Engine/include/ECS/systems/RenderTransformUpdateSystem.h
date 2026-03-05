@@ -6,6 +6,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <cmath>
+
 // Updates Engine::ECS::RenderTransform from Position (+ optional Facing).
 // Uses dirty queries so it only runs when Position/Facing are marked dirty.
 class RenderTransformUpdateSystem : public Engine::ECS::SystemBase
@@ -64,6 +66,11 @@ public:
 
                 const auto &pos = positions[row];
                 const float yaw = hasFacing ? facings[row].yaw : 0.0f;
+
+                if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z))
+                    continue;
+                if (hasFacing && !std::isfinite(yaw))
+                    continue;
 
                 glm::mat4 world = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, pos.y, pos.z));
                 if (hasFacing)

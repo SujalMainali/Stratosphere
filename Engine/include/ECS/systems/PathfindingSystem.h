@@ -84,16 +84,27 @@ public:
                 if (!tgt.active)
                 {
                     path.valid = false;
+                    path.count = 0;
+                    path.current = 0;
                     continue;
                 }
 
-                if (path.valid && path.current < path.count)
-                    continue;
+                // MoveTarget became dirty => treat this as a new goal and replan.
+                // (SteeringSystem no longer marks MoveTarget dirty each frame.)
+                path.valid = false;
+                path.count = 0;
+                path.current = 0;
 
-                if (path.valid && path.current >= path.count)
-                    continue;
+                const float oldTx = tgt.x;
+                const float oldTz = tgt.z;
 
                 runAStar(pos, tgt, path);
+
+                if (tgt.x != oldTx || tgt.z != oldTz)
+                {
+                    // Keep other systems (and future frames) aware that the goal changed.
+                    ecs.markDirty(m_moveTargetId, archetypeId, i);
+                }
             }
         }
     }
@@ -160,7 +171,7 @@ private:
         m_closedGen[idx] = m_currentGen;
     }
 
-    void runAStar(const Engine::ECS::Position &startPos, const Engine::ECS::MoveTarget &target, Engine::ECS::Path &outPath)
+    void runAStar(const Engine::ECS::Position &startPos, Engine::ECS::MoveTarget &target, Engine::ECS::Path &outPath)
     {
         const int W = m_grid->width;
         const int H = m_grid->height;
@@ -176,6 +187,8 @@ private:
         const int startZ = m_grid->worldToGridZ(startPos.z);
         int targetX = std::max(0, std::min(W - 1, m_grid->worldToGridX(target.x)));
         int targetZ = std::max(0, std::min(H - 1, m_grid->worldToGridZ(target.z)));
+
+        bool relocatedTarget = false;
 
         if (!m_grid->isWalkable(targetX, targetZ))
         {
@@ -203,6 +216,17 @@ private:
                 outPath.valid = false;
                 return;
             }
+
+            relocatedTarget = true;
+        }
+
+        // If we had to relocate the goal cell, also relocate the entity's MoveTarget in world-space.
+        // Otherwise the SteeringSystem will eventually fall back to the original (blocked) MoveTarget
+        // after consuming the path, which causes oscillation/chaos near obstacle fields.
+        if (relocatedTarget)
+        {
+            target.x = m_grid->gridToWorldX(targetX);
+            target.z = m_grid->gridToWorldZ(targetZ);
         }
 
         const int startIdx = idx(startX, startZ);

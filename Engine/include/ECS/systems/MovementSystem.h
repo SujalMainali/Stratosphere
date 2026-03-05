@@ -11,6 +11,7 @@
 #include "ECS/Components.h"
 
 #include <cmath>
+#include <algorithm>
 
 class MovementSystem : public Engine::ECS::SystemBase
 {
@@ -32,12 +33,21 @@ public:
 
     void update(Engine::ECS::ECSContext &ecs, float dt) override
     {
+        if (!(dt > 0.0f) || !std::isfinite(dt))
+            return;
+
         if (m_queryId == Engine::ECS::QueryManager::InvalidQuery)
         {
             Engine::ECS::ComponentMask dirty;
             dirty.set(m_velocityId);
             m_queryId = ecs.queries.createDirtyQuery(required(), excluded(), dirty, ecs.stores);
         }
+
+        auto finite3 = [](float a, float b, float c)
+        { return std::isfinite(a) && std::isfinite(b) && std::isfinite(c); };
+
+        constexpr float kMaxSpeed = 25.0f; // m/s, sanity cap
+        constexpr float kMaxStep = 5.0f;   // m/frame, teleport guard
 
         const auto &q = ecs.queries.get(m_queryId);
         for (uint32_t archetypeId : q.matchingArchetypeIds)
@@ -60,13 +70,72 @@ public:
                 if (i >= n)
                     continue;
 
-                const float velMag1 = std::fabs(velocities[i].x) + std::fabs(velocities[i].y) + std::fabs(velocities[i].z);
+                auto &pos = positions[i];
+                auto &vel = velocities[i];
+
+                if (!finite3(pos.x, pos.y, pos.z) || !finite3(vel.x, vel.y, vel.z))
+                {
+                    vel.x = vel.y = vel.z = 0.0f;
+                    ecs.markDirty(m_velocityId, archetypeId, i);
+                    continue;
+                }
+
+                // Clamp absurd speeds so one bad frame can't launch an entity across the map.
+                const float v2 = vel.x * vel.x + vel.y * vel.y + vel.z * vel.z;
+                if (v2 > (kMaxSpeed * kMaxSpeed))
+                {
+                    const float inv = kMaxSpeed / std::sqrt(v2);
+                    vel.x *= inv;
+                    vel.y *= inv;
+                    vel.z *= inv;
+                }
+
+                const float velMag1 = std::fabs(vel.x) + std::fabs(vel.y) + std::fabs(vel.z);
                 if (velMag1 <= 1e-6f)
                     continue;
 
-                positions[i].x += velocities[i].x * dt;
-                positions[i].y += velocities[i].y * dt;
-                positions[i].z += velocities[i].z * dt;
+                float dx = vel.x * dt;
+                float dy = vel.y * dt;
+                float dz = vel.z * dt;
+
+                if (!finite3(dx, dy, dz))
+                {
+                    vel.x = vel.y = vel.z = 0.0f;
+                    ecs.markDirty(m_velocityId, archetypeId, i);
+                    continue;
+                }
+
+                const float step2 = dx * dx + dy * dy + dz * dz;
+                if (step2 > (kMaxStep * kMaxStep))
+                {
+                    const float inv = kMaxStep / std::sqrt(step2);
+                    dx *= inv;
+                    dy *= inv;
+                    dz *= inv;
+                    // Keep velocity consistent with the clamped step.
+                    vel.x = dx / dt;
+                    vel.y = dy / dt;
+                    vel.z = dz / dt;
+                }
+
+                const float oldX = pos.x;
+                const float oldY = pos.y;
+                const float oldZ = pos.z;
+
+                pos.x += dx;
+                pos.y += dy;
+                pos.z += dz;
+
+                if (!finite3(pos.x, pos.y, pos.z))
+                {
+                    pos.x = oldX;
+                    pos.y = oldY;
+                    pos.z = oldZ;
+                    vel.x = vel.y = vel.z = 0.0f;
+                    ecs.markDirty(m_velocityId, archetypeId, i);
+                    ecs.markDirty(m_positionId, archetypeId, i);
+                    continue;
+                }
 
                 ecs.markDirty(m_positionId, archetypeId, i);
 
