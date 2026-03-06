@@ -85,7 +85,7 @@ public:
                 const uint32_t safeClip = (!asset->animClips.empty())
                                               ? std::min(anim.clipIndex, static_cast<uint32_t>(asset->animClips.size() - 1))
                                               : 0u;
-                const float timeSec = (!asset->animClips.empty() && anim.playing) ? anim.timeSec : 0.0f;
+                const float timeSec = (!asset->animClips.empty()) ? anim.timeSec : 0.0f;
 
                 asset->evaluatePoseInto(safeClip, timeSec,
                                         m_trsScratch,

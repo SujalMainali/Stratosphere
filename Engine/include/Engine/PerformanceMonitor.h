@@ -11,9 +11,14 @@ namespace Engine
     class Renderer;
     class VulkanContext;
 
+    namespace ECS
+    {
+        struct ECSContext;
+    }
+
     /**
      * @brief Performance monitoring system that tracks and displays real-time metrics.
-     * 
+     *
      * Collects FPS, frame times, draw calls, VRAM, CPU usage.
      * Renders an ImGui-based overlay when enabled (F1 to toggle).
      */
@@ -24,8 +29,8 @@ namespace Engine
         ~PerformanceMonitor();
 
         // Disable copy/move for singleton-like usage
-        PerformanceMonitor(const PerformanceMonitor&) = delete;
-        PerformanceMonitor& operator=(const PerformanceMonitor&) = delete;
+        PerformanceMonitor(const PerformanceMonitor &) = delete;
+        PerformanceMonitor &operator=(const PerformanceMonitor &) = delete;
 
         /**
          * @brief Initialize the performance monitor.
@@ -33,7 +38,10 @@ namespace Engine
          * @param renderer Renderer for swapchain/extent info
          * @param window Window for resolution info
          */
-        void init(VulkanContext* ctx, Renderer* renderer, Window* window);
+        void init(VulkanContext *ctx, Renderer *renderer, Window *window);
+
+        // Optional: provide ECS context for schedule tracing display (debug-only UI).
+        void setEcsContext(ECS::ECSContext *ecs) { m_ecs = ecs; }
 
         /**
          * @brief Cleanup resources.
@@ -91,7 +99,7 @@ namespace Engine
         float getVramTotalMB() const { return m_vramTotalMB; }
         float getCpuUsagePercent() const { return m_cpuUsagePercent; }
         float getRamUsedMB() const { return m_ramUsedMB; }
-        const std::string& getGpuName() const { return m_gpuName; }
+        const std::string &getGpuName() const { return m_gpuName; }
         uint32_t getDrawCallCount() const { return m_drawCallCount; }
         uint32_t getResolutionWidth() const;
         uint32_t getResolutionHeight() const;
@@ -99,15 +107,18 @@ namespace Engine
     private:
         void updateMetrics();
         void calculatePercentileFPS();
-        void querySystemInfo();       // One-time GPU name, total VRAM
-        void updateSystemMetrics();   // Per-frame VRAM used, CPU %, RAM
-        void queryVramViaVulkan();     // Cross-platform VRAM via VK_EXT_memory_budget
+        void querySystemInfo();     // One-time GPU name, total VRAM
+        void updateSystemMetrics(); // Per-frame VRAM used, CPU %, RAM
+        void queryVramViaVulkan();  // Cross-platform VRAM via VK_EXT_memory_budget
 
     private:
         // References to engine systems
-        VulkanContext* m_ctx = nullptr;
-        Renderer* m_renderer = nullptr;
-        Window* m_window = nullptr;
+        VulkanContext *m_ctx = nullptr;
+        Renderer *m_renderer = nullptr;
+        Window *m_window = nullptr;
+
+        // Optional ECS pointer for schedule tracing.
+        ECS::ECSContext *m_ecs = nullptr;
 
         // Visibility toggle
         bool m_visible = false;
@@ -116,10 +127,10 @@ namespace Engine
         // Timing
         using Clock = std::chrono::high_resolution_clock;
         using TimePoint = std::chrono::time_point<Clock>;
-        
+
         TimePoint m_frameStart;
         TimePoint m_lastFrameEnd;
-        
+
         // Frame time history for percentile calculations (stores frame times in ms)
         static constexpr size_t HISTORY_SIZE = 300; // ~5 seconds at 60fps
         std::deque<float> m_frameTimeHistory;
@@ -130,18 +141,18 @@ namespace Engine
         float m_01percentLowFPS = 0.0f;
         float m_frameTimeMs = 0.0f;
         float m_cpuTimeMs = 0.0f;
-        float m_gpuTimeMs = 0.0f;  // Placeholder - requires GPU timestamp queries
+        float m_gpuTimeMs = 0.0f;       // Placeholder - requires GPU timestamp queries
         float m_gpuUsagePercent = 0.0f; // Placeholder - requires vendor-specific queries
 
         // GPU / VRAM info
         std::string m_gpuName;
         float m_vramTotalMB = 0.0f;     // Total device-local VRAM (MB)
-        float m_vramUsedMB  = 0.0f;     // Currently used VRAM (MB) - via VK_EXT_memory_budget
-        bool  m_hasMemoryBudget = false;  // VK_EXT_memory_budget supported
+        float m_vramUsedMB = 0.0f;      // Currently used VRAM (MB) - via VK_EXT_memory_budget
+        bool m_hasMemoryBudget = false; // VK_EXT_memory_budget supported
 
         // CPU / RAM usage
-        float m_cpuUsagePercent = 0.0f;  // System-wide CPU usage %
-        float m_ramUsedMB = 0.0f;        // Process working set (MB)
+        float m_cpuUsagePercent = 0.0f; // System-wide CPU usage %
+        float m_ramUsedMB = 0.0f;       // Process working set (MB)
 
         // Smoothed display values (EMA filtered for readability)
         float m_smoothedFrameTimeMs = 0.0f;
@@ -168,13 +179,13 @@ namespace Engine
 
 #ifdef _WIN32
         // CPU usage tracking (GetSystemTimes delta)
-        uint64_t m_prevIdleTime   = 0;
+        uint64_t m_prevIdleTime = 0;
         uint64_t m_prevKernelTime = 0;
-        uint64_t m_prevUserTime   = 0;
+        uint64_t m_prevUserTime = 0;
 #elif defined(__linux__)
         // CPU usage tracking (/proc/stat delta)
         uint64_t m_prevCpuTotal = 0;
-        uint64_t m_prevCpuIdle  = 0;
+        uint64_t m_prevCpuIdle = 0;
 #endif
     };
 

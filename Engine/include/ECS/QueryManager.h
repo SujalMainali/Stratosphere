@@ -14,10 +14,12 @@
 #include <cstdint>
 #include <vector>
 #include <algorithm>
+#include <mutex>
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
 #include "ECS/Query.h"
+#include "ECS/EcsTrace.h"
 #include "ECS/ArchetypeStore.h"
 
 namespace Engine::ECS
@@ -26,6 +28,13 @@ namespace Engine::ECS
     {
     public:
         static constexpr QueryId InvalidQuery = UINT32_MAX;
+
+        // Optional: ECS trace for debug profiling.
+        void setTrace(EcsTrace *trace) { m_trace = trace; }
+
+        // Set by the schedule driver (SystemRunner) so consumeDirtyRows can attribute work.
+        void setCurrentSystemName(const char *name) { t_currentSystemName = name; }
+        void clearCurrentSystemName() { t_currentSystemName = nullptr; }
 
         QueryId createQuery(const ComponentMask &required, const ComponentMask &excluded,
                             const ArchetypeStoreManager &mgr)
@@ -74,7 +83,7 @@ namespace Engine::ECS
                 const uint32_t archetypeId = q.matchingArchetypeIds[i];
                 const ArchetypeStore *store = mgr.get(archetypeId);
                 const uint32_t n = store ? store->size() : 0u;
-                ensureBitsetSize(q.dirtyBits[i], n);
+                ensureBitsetSize(q, q.dirtyBits[i], n);
                 // Mark all rows dirty.
                 for (uint32_t row = 0; row < n; ++row)
                     setDirtyBit(q.dirtyBits[i], row);
@@ -117,7 +126,7 @@ namespace Engine::ECS
                 if (it == q.archetypeToMatchIndex.end())
                     continue;
                 const uint32_t matchIdx = it->second;
-                ensureBitsetSize(q.dirtyBits[matchIdx], storeSize);
+                ensureBitsetSize(q, q.dirtyBits[matchIdx], storeSize);
                 setDirtyBit(q.dirtyBits[matchIdx], row);
             }
         }
@@ -133,7 +142,7 @@ namespace Engine::ECS
                 if (it == q.archetypeToMatchIndex.end())
                     continue;
                 const uint32_t matchIdx = it->second;
-                ensureBitsetSize(q.dirtyBits[matchIdx], storeSize);
+                ensureBitsetSize(q, q.dirtyBits[matchIdx], storeSize);
                 setDirtyBit(q.dirtyBits[matchIdx], row);
             }
         }
@@ -156,7 +165,8 @@ namespace Engine::ECS
             auto &bits = q.dirtyBits[matchIdx];
             for (size_t w = 0; w < bits.size(); ++w)
             {
-                uint64_t word = bits[w];
+                // Atomically consume this word: exchange to 0 so concurrent markDirty is safe.
+                uint64_t word = bits[w].v.exchange(0ull, std::memory_order_acq_rel);
                 if (word == 0)
                     continue;
                 while (word)
@@ -173,29 +183,44 @@ namespace Engine::ECS
                     rows.push_back(row);
                     word ^= lsb;
                 }
-                bits[w] = 0;
             }
             std::sort(rows.begin(), rows.end());
+
+            if (m_trace && t_currentSystemName && !rows.empty())
+            {
+                m_trace->onDirtyConsumed(t_currentSystemName, archetypeId, static_cast<uint32_t>(rows.size()));
+            }
+
             return rows;
         }
 
     private:
         std::vector<Query> m_queries;
 
-        static void ensureBitsetSize(std::vector<uint64_t> &bits, uint32_t rowCount)
+        EcsTrace *m_trace = nullptr;
+
+        static thread_local const char *t_currentSystemName;
+
+        static void ensureBitsetSize(Query &q, std::vector<Query::AtomicWord> &bits, uint32_t rowCount)
         {
             const size_t needWords = static_cast<size_t>((rowCount + 63u) / 64u);
+            if (bits.size() >= needWords)
+                return;
+            std::lock_guard<std::mutex> lock(q.dirtyResizeMutex);
             if (bits.size() < needWords)
-                bits.resize(needWords, 0ull);
+                bits.resize(needWords);
         }
 
-        static void setDirtyBit(std::vector<uint64_t> &bits, uint32_t row)
+        static void setDirtyBit(std::vector<Query::AtomicWord> &bits, uint32_t row)
         {
             const size_t word = static_cast<size_t>(row / 64u);
             const uint32_t bit = row % 64u;
             if (word >= bits.size())
-                bits.resize(word + 1, 0ull);
-            bits[word] |= (1ull << bit);
+            {
+                // Resize should be done by ensureBitsetSize (callers pass storeSize).
+                bits.resize(word + 1);
+            }
+            bits[word].v.fetch_or((1ull << bit), std::memory_order_relaxed);
         }
     };
 }

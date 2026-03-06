@@ -84,6 +84,9 @@ add_library(Engine STATIC
     src/TextureAsset.cpp
     src/PerformanceMonitor.cpp
     src/ImGuiLayer.cpp
+    src/JobSystem.cpp
+    src/EcsTrace.cpp
+    src/QueryManagerTLS.cpp
 )
 
 # --- Shaders: compile GLSL -> SPIR-V (optional but recommended) ---

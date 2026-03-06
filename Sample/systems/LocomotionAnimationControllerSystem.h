@@ -99,18 +99,19 @@ public:
                     }
                 }
 
-                // Keep locomotion always playing so idle can animate naturally
-                // and PoseUpdateSystem doesn't snap to t=0 when "not playing".
-                if (anim.playing != true)
+                // Idle should be stationary for performance: evaluate at t=0 then stop.
+                // Run should continue looping as normal.
+                const bool wantPlaying = isMoving;
+                const bool wantLoop = isMoving;
+
+                if (anim.playing != wantPlaying)
                 {
-                    anim.playing = true;
+                    anim.playing = wantPlaying;
                     changed = true;
                 }
-
-                // Locomotion should loop while playing.
-                if (anim.loop != true)
+                if (anim.loop != wantLoop)
                 {
-                    anim.loop = true;
+                    anim.loop = wantLoop;
                     changed = true;
                 }
 

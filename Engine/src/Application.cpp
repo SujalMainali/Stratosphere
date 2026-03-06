@@ -7,8 +7,10 @@
 #include "Engine/PerformanceMonitor.h"
 #include "ECS/ECSContext.h"
 #include "Engine/ImGuiLayer.h"
+#include "utils/JobSystem.h"
 #include <iostream>
 #include <chrono>
+#include <algorithm>
 
 namespace Engine
 {
@@ -23,6 +25,7 @@ namespace Engine
         bool running = true;
         EventCallbackFn eventCallback;
         std::unique_ptr<ECS::ECSContext> ecs;
+        std::unique_ptr<JobSystem> jobSystem;
     };
 
     Application::Application()
@@ -66,6 +69,16 @@ namespace Engine
             } });
 
         m_Impl->ecs = std::make_unique<ECS::ECSContext>();
+
+        const uint32_t hw = std::max(1u, std::thread::hardware_concurrency());
+        const uint32_t workerThreads = (hw > 1u) ? (hw - 1u) : 0u;
+        m_Impl->jobSystem = std::make_unique<JobSystem>(workerThreads);
+        m_Impl->ecs->SetJobSystem(m_Impl->jobSystem.get());
+
+        if (m_Impl->perfMonitor)
+        {
+            m_Impl->perfMonitor->setEcsContext(m_Impl->ecs.get());
+        }
     }
 
     Application::~Application() = default;

@@ -13,6 +13,10 @@
 #include <iostream>
 #include <sstream>
 
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+#include "ECS/ECSContext.h"
+#endif
+
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
@@ -674,6 +678,31 @@ namespace Engine
             ImGui::Text("  Draw Calls: %u", m_lastFrameDrawCalls);
 
             ImGui::Spacing();
+
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+            // --- ECS schedule trace (debug-only) ---
+            if (m_ecs)
+            {
+                const auto &events = m_ecs->trace.events();
+                if (!events.empty())
+                {
+                    ImGui::Separator();
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.4f, 1.0f));
+                    ImGui::Text("ECS Schedule");
+                    ImGui::PopStyleColor();
+
+                    // Show in execution order (as recorded by SystemRunner).
+                    for (const auto &e : events)
+                    {
+                        ImGui::Text("  %s: %.2f ms", e.name.c_str(), e.ms);
+                        ImGui::TextDisabled("    archetypes=%u  scanned=%u  dirty=%u  topDirty(A%u)=%u",
+                                            e.matchingArchetypes, e.entitiesScanned, e.dirtyRowsConsumed,
+                                            e.topDirtyArchetypeId, e.topDirtyRows);
+                    }
+                }
+            }
+#endif
+
             ImGui::Separator();
             ImGui::TextDisabled("Press F1 to toggle");
         }
