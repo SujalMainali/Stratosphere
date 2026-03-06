@@ -45,4 +45,10 @@ namespace Engine::ECS
             e.topDirtyArchetypeId = archetypeId;
         }
     }
+
+    std::vector<EcsTrace::SystemEvent> EcsTrace::snapshotEvents() const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_events;
+    }
 }

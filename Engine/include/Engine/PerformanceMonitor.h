@@ -5,6 +5,11 @@
 #include <cstdint>
 #include <string>
 
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+#include <unordered_map>
+#include <vector>
+#endif
+
 namespace Engine
 {
     class Window;
@@ -186,6 +191,12 @@ namespace Engine
         // CPU usage tracking (/proc/stat delta)
         uint64_t m_prevCpuTotal = 0;
         uint64_t m_prevCpuIdle = 0;
+#endif
+
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+        // Stable ordering for ECS schedule UI (prevents rows from jumping when systems run concurrently).
+        std::vector<std::string> m_ecsSystemDisplayOrder;
+        std::unordered_map<std::string, size_t> m_ecsSystemDisplayIndex;
 #endif
     };
 

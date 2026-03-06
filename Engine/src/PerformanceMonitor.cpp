@@ -683,7 +683,7 @@ namespace Engine
             // --- ECS schedule trace (debug-only) ---
             if (m_ecs)
             {
-                const auto &events = m_ecs->trace.events();
+                auto events = m_ecs->trace.snapshotEvents();
                 if (!events.empty())
                 {
                     ImGui::Separator();
@@ -691,10 +691,36 @@ namespace Engine
                     ImGui::Text("ECS Schedule");
                     ImGui::PopStyleColor();
 
-                    // Show in execution order (as recorded by SystemRunner).
+                    // Update stable display order (first-seen wins).
                     for (const auto &e : events)
                     {
-                        ImGui::Text("  %s: %.2f ms", e.name.c_str(), e.ms);
+                        if (m_ecsSystemDisplayIndex.find(e.name) != m_ecsSystemDisplayIndex.end())
+                            continue;
+                        m_ecsSystemDisplayIndex.emplace(e.name, m_ecsSystemDisplayOrder.size());
+                        m_ecsSystemDisplayOrder.push_back(e.name);
+                    }
+
+                    // Map events by name for quick lookup.
+                    std::unordered_map<std::string, const Engine::ECS::EcsTrace::SystemEvent *> byName;
+                    byName.reserve(events.size());
+                    for (const auto &e : events)
+                        byName.emplace(e.name, &e);
+
+                    // Render in stable order so parallel systems don't reshuffle rows.
+                    for (const auto &name : m_ecsSystemDisplayOrder)
+                    {
+                        auto it = byName.find(name);
+                        if (it == byName.end() || it->second == nullptr)
+                            continue;
+                        const auto &e = *it->second;
+
+                        // Adaptive precision so very fast systems don't show as 0.00 ms.
+                        if (e.ms < 0.01f)
+                            ImGui::Text("  %s: %.0f us", e.name.c_str(), e.ms * 1000.0f);
+                        else if (e.ms < 0.10f)
+                            ImGui::Text("  %s: %.3f ms", e.name.c_str(), e.ms);
+                        else
+                            ImGui::Text("  %s: %.2f ms", e.name.c_str(), e.ms);
                         ImGui::TextDisabled("    archetypes=%u  scanned=%u  dirty=%u  topDirty(A%u)=%u",
                                             e.matchingArchetypes, e.entitiesScanned, e.dirtyRowsConsumed,
                                             e.topDirtyArchetypeId, e.topDirtyRows);

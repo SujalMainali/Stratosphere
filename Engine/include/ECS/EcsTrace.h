@@ -36,6 +36,10 @@ namespace Engine::ECS
 
         const std::vector<SystemEvent> &events() const { return m_events; }
 
+        // Thread-safe snapshot of the current frame events (stable for the caller).
+        // Preferred for UI/debug tools when systems may run concurrently.
+        std::vector<SystemEvent> snapshotEvents() const;
+
     private:
         SystemEvent &getOrCreateSystem(const char *name);
 

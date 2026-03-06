@@ -55,6 +55,10 @@ namespace CombatTuning
     static constexpr float MOVE_TARGET_REPATH_DIST2 = 4.0f;
     static constexpr float CLICK_TARGET_MATCH_DIST2 = 1.0f;
 
+    // Parallelize per-entity combat decisions when there are many units.
+    // (Decision phase is read-only on most components; mutations are applied later in a deterministic merge.)
+    static constexpr uint32_t PARALLEL_DECIDE_ENTITY_THRESHOLD = 256;
+
     // Charge leg switching: unit is considered "passing through" the click point.
     static constexpr float PASS_RADIUS = 3.0f;
     static constexpr float PASS_RADIUS2 = PASS_RADIUS * PASS_RADIUS;
