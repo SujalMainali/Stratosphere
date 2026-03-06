@@ -2,6 +2,7 @@
 
 #include "ECS/SystemFormat.h"
 #include "ECS/Components.h"
+#include "utils/JobSystem.h"
 
 #include <algorithm>
 #include <cmath>
@@ -9,6 +10,11 @@
 class SteeringSystem : public Engine::ECS::SystemBase
 {
 public:
+    // =====================
+    // TUNING CONSTANTS
+    // =====================
+    static constexpr uint32_t PARALLEL_DIRTY_ROW_THRESHOLD = 256;
+
     SteeringSystem()
     {
         // Position + Velocity + MoveTarget + MoveSpeed + Path + Facing required
@@ -89,10 +95,10 @@ public:
 
             const uint32_t n = store.size();
 
-            for (uint32_t i : dirtyRows)
+            auto processRow = [&](uint32_t i)
             {
                 if (i >= n)
-                    continue;
+                    return;
 
                 auto &pos = positions[i];
                 auto &vel = velocities[i];
@@ -102,7 +108,7 @@ public:
                 auto &facing = facings[i];
 
                 if (!tgt.active)
-                    continue;
+                    return;
 
                 float tx = tgt.x;
                 float tz = tgt.z;
@@ -171,7 +177,7 @@ public:
                     {
                         ecs.markDirty(m_velocityId, archetypeId, i);
                         ecs.markDirty(m_moveTargetId, archetypeId, i);
-                        continue;
+                        return;
                     }
                 }
 
@@ -215,6 +221,17 @@ public:
                 }
 
                 ecs.markDirty(m_velocityId, archetypeId, i);
+            };
+
+            if (ecs.jobSystem && dirtyRows.size() >= PARALLEL_DIRTY_ROW_THRESHOLD)
+            {
+                ecs.jobSystem->parallelFor(static_cast<uint32_t>(dirtyRows.size()), [&](uint32_t /*worker*/, uint32_t item)
+                                           { processRow(dirtyRows[item]); });
+            }
+            else
+            {
+                for (uint32_t i : dirtyRows)
+                    processRow(i);
             }
         }
     }

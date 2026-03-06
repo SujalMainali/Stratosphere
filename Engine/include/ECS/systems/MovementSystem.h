@@ -17,6 +17,13 @@
 class MovementSystem : public Engine::ECS::SystemBase
 {
 public:
+    // =====================
+    // TUNING CONSTANTS
+    // =====================
+    static constexpr uint32_t PARALLEL_DIRTY_ROW_THRESHOLD = 256;
+    static constexpr float MAX_SPEED = 25.0f; // m/s, sanity cap
+    static constexpr float MAX_STEP = 5.0f;   // m/frame, teleport guard
+
     MovementSystem()
     {
         setRequiredNames({"Position", "Velocity"});
@@ -46,9 +53,6 @@ public:
 
         auto finite3 = [](float a, float b, float c)
         { return std::isfinite(a) && std::isfinite(b) && std::isfinite(c); };
-
-        constexpr float kMaxSpeed = 25.0f; // m/s, sanity cap
-        constexpr float kMaxStep = 5.0f;   // m/frame, teleport guard
 
         const auto &q = ecs.queries.get(m_queryId);
         for (uint32_t archetypeId : q.matchingArchetypeIds)
@@ -83,9 +87,9 @@ public:
 
                 // Clamp absurd speeds so one bad frame can't launch an entity across the map.
                 const float v2 = vel.x * vel.x + vel.y * vel.y + vel.z * vel.z;
-                if (v2 > (kMaxSpeed * kMaxSpeed))
+                if (v2 > (MAX_SPEED * MAX_SPEED))
                 {
-                    const float inv = kMaxSpeed / std::sqrt(v2);
+                    const float inv = MAX_SPEED / std::sqrt(v2);
                     vel.x *= inv;
                     vel.y *= inv;
                     vel.z *= inv;
@@ -107,9 +111,9 @@ public:
                 }
 
                 const float step2 = dx * dx + dy * dy + dz * dz;
-                if (step2 > (kMaxStep * kMaxStep))
+                if (step2 > (MAX_STEP * MAX_STEP))
                 {
-                    const float inv = kMaxStep / std::sqrt(step2);
+                    const float inv = MAX_STEP / std::sqrt(step2);
                     dx *= inv;
                     dy *= inv;
                     dz *= inv;
@@ -145,7 +149,7 @@ public:
             };
 
             // Parallelize over dirty rows when a job system is available and the batch is non-trivial.
-            if (ecs.jobSystem && dirtyRows.size() >= 256)
+            if (ecs.jobSystem && dirtyRows.size() >= PARALLEL_DIRTY_ROW_THRESHOLD)
             {
                 ecs.jobSystem->parallelFor(static_cast<uint32_t>(dirtyRows.size()), [&](uint32_t /*worker*/, uint32_t item)
                                            { processRow(dirtyRows[item]); });

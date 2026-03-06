@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -39,6 +40,7 @@ namespace Engine::ECS
         SystemEvent &getOrCreateSystem(const char *name);
 
     private:
+        mutable std::mutex m_mutex;
         std::vector<SystemEvent> m_events;
         std::unordered_map<std::string, size_t> m_eventIndexByName;
     };

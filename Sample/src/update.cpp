@@ -71,6 +71,35 @@ namespace Sample
             // dirtyRowsConsumed will be accumulated via QueryManager::consumeDirtyRows().
             ecs.trace.onSystemEnd(sysName, ms, 0u, 0u);
         };
+
+        auto runTracedParallel2 = [&](const char *sysA, auto &&fnA, const char *sysB, auto &&fnB)
+        {
+            // No job system or no worker threads: fall back to sequential.
+            if (!ecs.jobSystem || ecs.jobSystem->workerCount() == 0)
+            {
+                runTraced(sysA, fnA);
+                runTraced(sysB, fnB);
+                return;
+            }
+
+            ecs.jobSystem->parallelFor(2, [&](uint32_t /*worker*/, uint32_t task)
+                                       {
+                                const char* sysName = (task == 0) ? sysA : sysB;
+
+                                using Clock = std::chrono::high_resolution_clock;
+                                const auto t0 = Clock::now();
+
+                                ecs.queries.setCurrentSystemName(sysName);
+                                if (task == 0)
+                                        fnA();
+                                else
+                                        fnB();
+                                ecs.queries.clearCurrentSystemName();
+
+                                const auto t1 = Clock::now();
+                                const float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
+                                ecs.trace.onSystemEnd(sysName, ms, 0u, 0u); });
+        };
 #endif
 
         // 1. Input
@@ -82,11 +111,17 @@ namespace Sample
 #endif
 
         // 2. Spatial index rebuild (used by combat neighbor queries)
+        // 4. NavGrid rebuild (used by pathfinding)
+        // These are independent and can run concurrently.
 #if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
-        runTraced(m_spatialIndex.name(), [&]()
-                  { m_spatialIndex.update(ecs, dtSeconds); });
+        runTracedParallel2(
+            m_spatialIndex.name(), [&]()
+            { m_spatialIndex.update(ecs, dtSeconds); },
+            m_navGridBuilder.name(), [&]()
+            { m_navGridBuilder.update(ecs, dtSeconds); });
 #else
         m_spatialIndex.update(ecs, dtSeconds);
+        m_navGridBuilder.update(ecs, dtSeconds);
 #endif
 
         // 3. Combat (may set move targets/stop units)
@@ -95,14 +130,6 @@ namespace Sample
                   { m_combat.update(ecs, dtSeconds); });
 #else
         m_combat.update(ecs, dtSeconds);
-#endif
-
-        // 4. NavGrid (Rebuild grid from static obstacles)
-#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
-        runTraced(m_navGridBuilder.name(), [&]()
-                  { m_navGridBuilder.update(ecs, dtSeconds); });
-#else
-        m_navGridBuilder.update(ecs, dtSeconds);
 #endif
 
         // 5. Pathfinding (Plan paths for units with invalid/new targets)
@@ -136,9 +163,6 @@ namespace Sample
 #else
         m_movement.update(ecs, dtSeconds);
 #endif
-
-        // 9. Render transforms (world matrix + version for render caching)
-        // m_renderTransform.update(ecs, dtSeconds);
 
         // 10. Animation selection (sample policy)
 #if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION

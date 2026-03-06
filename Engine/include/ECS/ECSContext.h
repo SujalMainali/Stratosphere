@@ -229,8 +229,23 @@ namespace Engine::ECS
         // Optional helper to reset state (typically not needed except in tests/tools).
         void Reset()
         {
-            // Recreate default-constructed managers.
-            *this = ECSContext{};
+            // Recreate default-constructed managers without relying on move assignment.
+            // (EcsTrace contains a mutex and is intentionally non-movable.)
+
+            Engine::JobSystem *js = jobSystem;
+
+            components = ComponentRegistry{};
+            archetypes = ArchetypeManager{};
+            stores = ArchetypeStoreManager{};
+            entities = EntitiesRecord{};
+            prefabs = PrefabManager{};
+            queries = QueryManager{};
+
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+            trace.beginFrame();
+#endif
+
+            jobSystem = js;
         }
     };
 }
