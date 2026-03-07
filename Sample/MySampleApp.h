@@ -4,6 +4,7 @@
 #include "Engine/Camera.h"
 
 #include "update.h"
+#include "editor/BattleConfigEditor.h"
 
 #include "assets/Handles.h"
 
@@ -67,6 +68,7 @@ private:
     std::shared_ptr<Engine::GroundPlaneRenderPassModule> m_groundPass;
 
     Sample::SystemRunner m_systems;
+    Sample::BattleConfigEditor m_configEditor;
 
     // True once a new game is started or a save is loaded.
     bool m_inGame = true;

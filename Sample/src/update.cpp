@@ -111,4 +111,15 @@ namespace Sample
     {
         m_command.SetGlobalMoveTarget(x, y, z);
     }
+
+    void SystemRunner::ResetForRestart()
+    {
+        // Reset the initialized flag so Initialize() re-builds masks and queries.
+        m_initialized = false;
+
+        // Clear combat state (death queues, battle flags, unit memories).
+        m_combat.resetBattleState();
+
+        // NavGrid will be rebuilt on next update automatically.
+    }
 }

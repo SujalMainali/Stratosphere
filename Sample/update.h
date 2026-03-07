@@ -43,6 +43,9 @@ namespace Sample
         /// Mutable access for config loading
         CombatSystem &GetCombatSystemMut() { return m_combat; }
 
+        /// Reset all systems for a clean restart (clears cached queries, battle state, etc.)
+        void ResetForRestart();
+
     private:
         bool m_initialized = false;
 

@@ -110,6 +110,9 @@ MySampleApp::MySampleApp() : Engine::Application()
     // Systems can be initialized after prefabs are registered.
     m_systems.Initialize(GetECS());
 
+    // Load battle config into the editor panel.
+    m_configEditor.loadFromFile("BattleConfig.json");
+
     // Hook engine window events into our handler.
     SetEventCallback([this](const std::string &e)
                      { this->OnEvent(e); });
@@ -602,6 +605,8 @@ void MySampleApp::OnRender()
         ImGui::End();
     }
 
+    // --- Battle Config Editor panel ---
+    m_configEditor.draw(GetECS(), m_systems);
 }
 
 void MySampleApp::setupECSFromPrefabs()
@@ -741,6 +746,10 @@ void MySampleApp::OnEvent(const std::string &name)
 
     if (evt == "MouseButtonLeftDown")
     {
+        // Skip game input when ImGui is using the mouse (editor sliders, buttons, etc.)
+        if (ImGui::GetIO().WantCaptureMouse)
+            return;
+
         // Left click is reserved for camera drag/pan only.
         m_isPanning = true;
         m_panJustStarted = true;
@@ -760,12 +769,18 @@ void MySampleApp::OnEvent(const std::string &name)
 
     if (evt == "MouseButtonRightDown")
     {
+        if (ImGui::GetIO().WantCaptureMouse)
+            return;
+
         PickAndSelectEntityAtCursor();
         return;
     }
 
     if (evt == "MouseScroll")
     {
+        if (ImGui::GetIO().WantCaptureMouse)
+            return;
+
         double xoff = 0.0, yoff = 0.0;
         iss >> xoff >> yoff;
         (void)xoff;
