@@ -68,13 +68,13 @@ namespace Sample
         m_steering.update(ecs, dtSeconds);
 
         // 7. Local avoidance adjusts velocity to reduce overlaps
-        // m_localAvoidance.update(ecs, dtSeconds);
+        m_localAvoidance.update(ecs, dtSeconds);
 
         // 8. Movement integration (uses velocity produced by steering+avoidance)
         m_movement.update(ecs, dtSeconds);
 
         // 9. Render transforms (world matrix + version for render caching)
-        m_renderTransform.update(ecs, dtSeconds);
+        // m_renderTransform.update(ecs, dtSeconds);
 
         // 10. Animation selection (sample policy)
         m_locomotionAnim.update(ecs, dtSeconds);
