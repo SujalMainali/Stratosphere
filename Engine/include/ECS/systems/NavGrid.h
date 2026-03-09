@@ -46,6 +46,7 @@ public:
             height = 1;
 
         blocked.assign(static_cast<size_t>(width * height), 0);
+        dirty = true;
     }
 
     // Check if a straight line from (x0, z0) to (x1, z1) is clear of obstacles.

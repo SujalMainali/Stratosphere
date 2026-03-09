@@ -31,6 +31,7 @@ public:
         m_velocityId = registry.ensureId("Velocity");
         m_moveTargetId = registry.ensureId("MoveTarget");
         m_facingId = registry.ensureId("Facing");
+        m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     }
 
     void update(Engine::ECS::ECSContext &ecs, float dt) override

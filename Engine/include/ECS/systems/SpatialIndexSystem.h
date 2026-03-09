@@ -83,6 +83,12 @@ public:
 
     const char *name() const override { return "SpatialIndexSystem"; }
 
+    void buildMasks(Engine::ECS::ComponentRegistry &registry) override
+    {
+        Engine::ECS::SystemBase::buildMasks(registry);
+        m_queryId = Engine::ECS::QueryManager::InvalidQuery;
+    }
+
     void setCellSize(float cellSize) { m_cellSize = (cellSize > 1e-6f) ? cellSize : 1e-6f; }
     float getCellSize() const { return m_cellSize; }
 

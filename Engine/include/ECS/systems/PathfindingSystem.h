@@ -47,6 +47,7 @@ public:
     {
         Engine::ECS::SystemBase::buildMasks(registry);
         m_moveTargetId = registry.ensureId("MoveTarget");
+        m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     }
 
     void update(Engine::ECS::ECSContext &ecs, float /*dt*/) override

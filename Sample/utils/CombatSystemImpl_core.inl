@@ -26,4 +26,5 @@ inline void CombatSystem::buildMasks(Engine::ECS::ComponentRegistry &registry)
     m_renderAnimId = registry.ensureId("RenderAnimation");
     m_facingId = registry.ensureId("Facing");
     m_deadId = registry.ensureId("Dead");
+    m_queryId = Engine::ECS::QueryManager::InvalidQuery;
 }

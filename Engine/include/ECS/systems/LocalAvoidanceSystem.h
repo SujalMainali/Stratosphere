@@ -61,6 +61,7 @@ public:
         m_positionId = registry.ensureId("Position");
         m_velocityId = registry.ensureId("Velocity");
         m_moveTargetId = registry.ensureId("MoveTarget");
+        m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     }
 
     void setGrid(const SpatialIndexSystem *grid) { m_grid = grid; }

@@ -94,6 +94,9 @@ namespace Engine::ECS
 
         const Query &get(QueryId id) const { return m_queries[id]; }
 
+        // Discard all compiled queries.  Systems must recreate theirs on next update.
+        void clear() { m_queries.clear(); }
+
         void onStoreCreated(uint32_t archetypeId, const ComponentMask &signature)
         {
             for (auto &q : m_queries)
