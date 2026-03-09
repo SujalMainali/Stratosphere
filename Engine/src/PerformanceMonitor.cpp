@@ -721,9 +721,19 @@ namespace Engine
                             ImGui::Text("  %s: %.3f ms", e.name.c_str(), e.ms);
                         else
                             ImGui::Text("  %s: %.2f ms", e.name.c_str(), e.ms);
-                        ImGui::TextDisabled("    archetypes=%u  scanned=%u  dirty=%u  topDirty(A%u)=%u",
-                                            e.matchingArchetypes, e.entitiesScanned, e.dirtyRowsConsumed,
-                                            e.topDirtyArchetypeId, e.topDirtyRows);
+
+                        if (e.name == "SpatialIndexSystem")
+                        {
+                            ImGui::TextDisabled("    cells=%u  entries=%u  dirty=%u  topDirty(A%u)=%u",
+                                                e.matchingArchetypes, e.entitiesScanned, e.dirtyRowsConsumed,
+                                                e.topDirtyArchetypeId, e.topDirtyRows);
+                        }
+                        else
+                        {
+                            ImGui::TextDisabled("    archetypes=%u  scanned=%u  dirty=%u  topDirty(A%u)=%u",
+                                                e.matchingArchetypes, e.entitiesScanned, e.dirtyRowsConsumed,
+                                                e.topDirtyArchetypeId, e.topDirtyRows);
+                        }
                     }
                 }
             }
