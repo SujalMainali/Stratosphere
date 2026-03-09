@@ -27,6 +27,8 @@ namespace Engine
         GroundPlaneRenderPassModule() = default;
         ~GroundPlaneRenderPassModule() override = default;
 
+        const char *getDebugName() const override { return "GroundPlane"; }
+
         void setEnabled(bool enabled) { m_enabled = enabled; }
         void setAssets(AssetManager *assets) { m_assets = assets; }
         void setCamera(Camera *camera) { m_camera = camera; }

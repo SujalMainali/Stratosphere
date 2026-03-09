@@ -24,14 +24,21 @@
 #include "ECS/ArchetypeStore.h"
 
 #include "ECS/systems/SpatialIndexSystem.h"
+#include "utils/JobSystem.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 class LocalAvoidanceSystem : public Engine::ECS::SystemBase
 {
 public:
+    // =====================
+    // TUNING CONSTANTS
+    // =====================
+    static constexpr uint32_t PARALLEL_DIRTY_ROW_THRESHOLD = 256;
+
     struct Config
     {
         // If true and both entities have Team, Separation is only applied to same-team neighbors.
@@ -135,15 +142,22 @@ public:
             const auto &ents = store.entities();
             const uint32_t n = store.size();
 
-            for (uint32_t row : dirtyRows)
-            {
-                if (row >= n)
-                    continue;
+            // Compute new velocities into a temporary buffer first. This avoids neighbor read/write hazards
+            // and makes it safe to parallelize the compute phase.
+            std::vector<Engine::ECS::Velocity> outVel(dirtyRows.size());
+            std::vector<uint8_t> outChanged(dirtyRows.size(), 0);
 
-                auto &p = positions[row];
-                auto &v = velocities[row];
+            auto computeAt = [&](uint32_t idx)
+            {
+                const uint32_t row = dirtyRows[idx];
+                if (row >= n)
+                    return;
+
+                const auto &p = positions[row];
+                const auto &v = velocities[row];
                 const float vOldX = v.x;
                 const float vOldZ = v.z;
+                const float vOldY = v.y;
                 const auto &r = radii[row];
                 const auto &ap = params[row];
                 const float sepSelf = sepsPtr ? (*sepsPtr)[row].value : 0.0f;
@@ -154,14 +168,8 @@ public:
                 const float prefSpeed = (prefSpeed2 > 1e-12f) ? std::sqrt(prefSpeed2) : 0.0f;
 
                 const bool hasActiveTarget = (targetsPtr && (*targetsPtr)[row].active);
-
-                // Settle mode:
-                // If there is no active target, we want units to become fully stable.
-                // That means: do NOT apply soft "keep-apart" falloff or predictive terms,
-                // and only resolve true penetrations (actual overlaps beyond a small tolerance).
                 const bool settleMode = (!hasActiveTarget);
 
-                // Overlap tolerance (meters). Small value prevents endless micro-corrections.
                 constexpr float kPenetrationEps = 0.05f;
 
                 const float horizon = std::max(0.0f, ap.predictionTime);
@@ -307,19 +315,21 @@ public:
                         }
                     } });
 
+                Engine::ECS::Velocity out = v;
+
                 if (!hasPressure && (std::fabs(accDirX) + std::fabs(accDirZ) < 1e-6f))
                 {
                     if (!hasActiveTarget)
                     {
-                        // Only force-stop + dirty if we were actually moving.
-                        if (std::fabs(v.x) + std::fabs(v.z) > 1e-6f)
+                        if (std::fabs(vOldX) + std::fabs(vOldZ) > 1e-6f)
                         {
-                            v.x = 0.0f;
-                            v.z = 0.0f;
-                            ecs.markDirty(m_velocityId, archetypeId, row);
+                            out.x = 0.0f;
+                            out.z = 0.0f;
+                            outChanged[idx] = 1;
                         }
                     }
-                    continue;
+                    outVel[idx] = out;
+                    return;
                 }
 
                 const float accL2 = accDirX * accDirX + accDirZ * accDirZ;
@@ -376,27 +386,52 @@ public:
                 }
 
                 const float t = clamp(ap.blend, 0.0f, 1.0f);
-                v.x = lerp(vPrefX, vNewX, t);
-                v.z = lerp(vPrefZ, vNewZ, t);
+                out.x = lerp(vPrefX, vNewX, t);
+                out.z = lerp(vPrefZ, vNewZ, t);
+                out.y = vOldY;
 
-                // If we're stopped (no target) and avoidance produced only a tiny velocity,
-                // snap to rest so units stop visibly drifting.
                 if (!hasActiveTarget)
                 {
-                    const float s2 = v.x * v.x + v.z * v.z;
-                    if (s2 < 0.0004f) // (0.02 m/s)^2
+                    const float s2 = out.x * out.x + out.z * out.z;
+                    if (s2 < 0.0004f)
                     {
-                        v.x = 0.0f;
-                        v.z = 0.0f;
+                        out.x = 0.0f;
+                        out.z = 0.0f;
                     }
                 }
 
-                // Only mark Velocity dirty if it actually changed.
-                const float dv1 = std::fabs(v.x - vOldX) + std::fabs(v.z - vOldZ);
+                const float dv1 = std::fabs(out.x - vOldX) + std::fabs(out.z - vOldZ);
                 if (dv1 > 1e-6f)
-                {
-                    ecs.markDirty(m_velocityId, archetypeId, row);
-                }
+                    outChanged[idx] = 1;
+
+                outVel[idx] = out;
+            };
+
+            Engine::JobSystem *js = ecs.jobSystem;
+            const bool canParallel = (js != nullptr) && (js->workerCount() > 0) &&
+                                     (dirtyRows.size() >= PARALLEL_DIRTY_ROW_THRESHOLD);
+            if (canParallel)
+            {
+                js->parallelFor(static_cast<uint32_t>(dirtyRows.size()), [&](uint32_t /*workerIndex*/, uint32_t i)
+                                { computeAt(i); });
+            }
+            else
+            {
+                for (uint32_t i = 0; i < dirtyRows.size(); ++i)
+                    computeAt(i);
+            }
+
+            // Apply buffered velocities and mark dirty if changed.
+            for (uint32_t i = 0; i < dirtyRows.size(); ++i)
+            {
+                const uint32_t row = dirtyRows[i];
+                if (row >= n)
+                    continue;
+                if (!outChanged[i])
+                    continue;
+
+                velocities[row] = outVel[i];
+                ecs.markDirty(m_velocityId, archetypeId, row);
             }
         }
     }

@@ -24,7 +24,15 @@
 #include "ECS/Entity.h"           // EntitiesRecord
 #include "ECS/Prefab.h"           // PrefabManager
 #include "ECS/QueryManager.h"     // QueryManager
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+#include "ECS/EcsTrace.h"
+#endif
 #include <vector>
+
+namespace Engine
+{
+    class JobSystem;
+}
 
 namespace Engine::ECS
 {
@@ -38,11 +46,28 @@ namespace Engine::ECS
         PrefabManager prefabs;
         QueryManager queries;
 
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+        EcsTrace trace;
+#endif
+
+        // Optional: job system used by parallel-friendly ECS systems.
+        // Owned by the engine (Application). ECS only holds a non-owning pointer.
+        Engine::JobSystem *jobSystem = nullptr;
+
         // Call once to keep QueryManager updated as new stores are created.
         void WireQueryManager()
         {
             stores.setOnStoreCreated([this](uint32_t archetypeId, const ComponentMask &signature)
                                      { this->queries.onStoreCreated(archetypeId, signature); });
+
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+            this->queries.setTrace(&this->trace);
+#endif
+        }
+
+        void SetJobSystem(Engine::JobSystem *js)
+        {
+            jobSystem = js;
         }
 
         // -------------------------
@@ -204,8 +229,23 @@ namespace Engine::ECS
         // Optional helper to reset state (typically not needed except in tests/tools).
         void Reset()
         {
-            // Recreate default-constructed managers.
-            *this = ECSContext{};
+            // Recreate default-constructed managers without relying on move assignment.
+            // (EcsTrace contains a mutex and is intentionally non-movable.)
+
+            Engine::JobSystem *js = jobSystem;
+
+            components = ComponentRegistry{};
+            archetypes = ArchetypeManager{};
+            stores = ArchetypeStoreManager{};
+            entities = EntitiesRecord{};
+            prefabs = PrefabManager{};
+            queries = QueryManager{};
+
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+            trace.beginFrame();
+#endif
+
+            jobSystem = js;
         }
     };
 }

@@ -3,6 +3,9 @@
 #include <stdexcept>
 #include <iostream>
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <cctype>
 
 namespace Engine
 {
@@ -99,7 +102,14 @@ namespace Engine
 
         // If replacing an old swapchain, cleanup the old one (vkDestroySwapchainKHR must be handled by caller or here if oldSwapchain used)
 #if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
-        std::cout << "SwapChain initialized: images=" << m_Images.size() << " format=" << m_ImageFormat << "\n";
+        const char *pm = "FIFO";
+        if (presentMode == VK_PRESENT_MODE_MAILBOX_KHR)
+            pm = "MAILBOX";
+        else if (presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR)
+            pm = "IMMEDIATE";
+        else if (presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR)
+            pm = "FIFO_RELAXED";
+        std::cout << "SwapChain initialized: images=" << m_Images.size() << " format=" << m_ImageFormat << " presentMode=" << pm << "\n";
 #endif
     }
 
@@ -142,6 +152,46 @@ namespace Engine
 
     VkPresentModeKHR SwapChain::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &available) const
     {
+        // Optional override for profiling/diagnostics:
+        //   ENGINE_PRESENT_MODE=fifo|mailbox|immediate
+        // When unset, we keep the default behavior (prefer MAILBOX, else FIFO).
+        if (const char *env = std::getenv("ENGINE_PRESENT_MODE"))
+        {
+            auto equalsIgnoreCase = [](const char *a, const char *b) -> bool
+            {
+                if (!a || !b)
+                    return false;
+                while (*a && *b)
+                {
+                    const char ca = static_cast<char>(std::tolower(*a));
+                    const char cb = static_cast<char>(std::tolower(*b));
+                    if (ca != cb)
+                        return false;
+                    ++a;
+                    ++b;
+                }
+                return *a == '\0' && *b == '\0';
+            };
+
+            VkPresentModeKHR desired = VK_PRESENT_MODE_FIFO_KHR;
+            if (equalsIgnoreCase(env, "mailbox"))
+                desired = VK_PRESENT_MODE_MAILBOX_KHR;
+            else if (equalsIgnoreCase(env, "immediate"))
+                desired = VK_PRESENT_MODE_IMMEDIATE_KHR;
+            else
+                desired = VK_PRESENT_MODE_FIFO_KHR;
+
+            for (const auto &av : available)
+            {
+                if (av == desired)
+                    return av;
+            }
+
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+            std::cout << "[SwapChain] ENGINE_PRESENT_MODE='" << env << "' not available; falling back\n";
+#endif
+        }
+
         for (const auto &av : available)
         {
             if (av == VK_PRESENT_MODE_MAILBOX_KHR)

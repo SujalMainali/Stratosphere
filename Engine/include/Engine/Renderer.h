@@ -18,6 +18,37 @@ namespace Engine
     class Renderer
     {
     public:
+        struct CpuFrameTimings
+        {
+            float waitFenceMs = 0.0f;
+            float acquireMs = 0.0f;
+
+            // Command buffer recording breakdown
+            float cmdResetMs = 0.0f;
+            float cmdBeginMs = 0.0f;
+            float timestampResetMs = 0.0f;
+            float renderPassBeginMs = 0.0f;
+            float passesRecordMs = 0.0f;
+            float imguiRecordMs = 0.0f;
+            float renderPassEndMs = 0.0f;
+            float cmdEndMs = 0.0f;
+
+            float recordMs = 0.0f;
+            float submitMs = 0.0f;
+
+            // Can block if the driver needs results; timed separately.
+            float queryResultsMs = 0.0f;
+            float presentMs = 0.0f;
+
+            float drawFrameTotalMs = 0.0f;
+            float otherMs = 0.0f; // drawFrameTotal minus the above buckets
+        };
+
+        struct PassCpuTiming
+        {
+            const char *name = "";
+            float recordMs = 0.0f;
+        };
         Renderer(VulkanContext *ctx, SwapChain *swapchain, uint32_t maxFramesInFlight = 2);
         ~Renderer();
 
@@ -62,6 +93,12 @@ namespace Engine
         // Get the last measured GPU frame time in milliseconds
         float getGpuTimeMs() const { return m_gpuTimeMs; }
 
+        // CPU timing breakdown for the most recent drawFrame().
+        const CpuFrameTimings &getCpuFrameTimings() const { return m_cpuTimings; }
+
+        // Per-pass CPU timings from the most recent drawFrame().
+        const std::vector<PassCpuTiming> &getCpuPassTimings() const { return m_passCpuTimings; }
+
     private:
         VulkanContext *m_ctx = nullptr;
         SwapChain *m_swapchain = nullptr;
@@ -99,6 +136,9 @@ namespace Engine
         float m_gpuTimeMs = 0.0f;       // Last measured GPU time in milliseconds
         bool m_timestampsSupported = false;
 
+        CpuFrameTimings m_cpuTimings{};
+        std::vector<PassCpuTiming> m_passCpuTimings;
+
     private:
         // Create semaphores and fences for each frame slot (called during init).
         void createSyncObjects();
@@ -126,6 +166,9 @@ namespace Engine
     {
     public:
         virtual ~RenderPassModule() = default;
+
+        // Debug-only: a short, stable name for profiling/UI.
+        virtual const char *getDebugName() const { return "RenderPassModule"; }
 
         // Called after the main render pass and framebuffers are created
         virtual void onCreate(VulkanContext &ctx, VkRenderPass pass, const std::vector<VkFramebuffer> &fbs) = 0;

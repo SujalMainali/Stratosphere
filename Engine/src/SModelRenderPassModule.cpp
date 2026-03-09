@@ -222,6 +222,7 @@ namespace Engine
     void SModelRenderPassModule::setInstances(const glm::mat4 *instanceWorlds, uint32_t count)
     {
         m_instanceWorlds.clear();
+        m_instancesVersion += 1u;
         if (!instanceWorlds || count == 0)
             return;
 
@@ -233,6 +234,7 @@ namespace Engine
         m_nodePalette.clear();
         m_paletteInstanceCount = 0;
         m_paletteNodeCount = 0;
+        m_nodePaletteVersion += 1u;
 
         if (!nodeGlobals || instanceCount == 0 || nodeCount == 0)
             return;
@@ -247,6 +249,7 @@ namespace Engine
     {
         m_jointPalette.clear();
         m_jointPaletteJointCount = 0;
+        m_jointPaletteVersion += 1u;
 
         if (!jointMatrices || instanceCount == 0 || jointCount == 0)
             return;
@@ -526,6 +529,11 @@ namespace Engine
 
             vkBindBufferMemory(ctx.GetDevice(), cf.buffer, cf.memory, 0);
 
+            // Camera UBO (host-visible, coherent, persistently mapped)
+            cf.mapped = nullptr;
+            if (vkMapMemory(ctx.GetDevice(), cf.memory, 0, VK_WHOLE_SIZE, 0, &cf.mapped) != VK_SUCCESS)
+                return false;
+
             // Palette SSBO (host-visible, coherent, persistently mapped)
             constexpr uint32_t kDefaultPaletteCapacityMatrices = 1024;
             cf.paletteCapacityMatrices = kDefaultPaletteCapacityMatrices;
@@ -642,6 +650,12 @@ namespace Engine
     {
         for (auto &cf : m_cameraFrames)
         {
+            if (cf.mapped && cf.memory != VK_NULL_HANDLE)
+            {
+                vkUnmapMemory(m_device, cf.memory);
+                cf.mapped = nullptr;
+            }
+
             if (cf.paletteMapped && cf.paletteMemory != VK_NULL_HANDLE)
             {
                 vkUnmapMemory(m_device, cf.paletteMemory);
@@ -778,6 +792,7 @@ namespace Engine
             return false;
 
         frame.paletteCapacityMatrices = newCap;
+        frame.lastUploadedNodePaletteVersion = 0;
 
         VkDescriptorBufferInfo pbi{};
         pbi.buffer = frame.paletteBuffer;
@@ -871,6 +886,7 @@ namespace Engine
             return false;
 
         frame.jointPaletteCapacityMatrices = newCap;
+        frame.lastUploadedJointPaletteVersion = 0;
 
         VkDescriptorBufferInfo jbi{};
         jbi.buffer = frame.jointPaletteBuffer;
@@ -1060,6 +1076,7 @@ namespace Engine
             return false;
 
         frame.capacity = newCap;
+        frame.lastUploadedInstancesVersion = 0;
         return true;
     }
 
@@ -1247,7 +1264,7 @@ namespace Engine
         // Update camera UBO for this frame
         const uint32_t camIndex = (!m_cameraFrames.empty()) ? (frameCtx.frameIndex % static_cast<uint32_t>(m_cameraFrames.size())) : 0;
         CameraFrame *camFrame = (!m_cameraFrames.empty()) ? &m_cameraFrames[camIndex] : nullptr;
-        if (camFrame && camFrame->memory != VK_NULL_HANDLE)
+        if (camFrame && camFrame->mapped)
         {
             CameraUBO ubo{};
             const float aspect = (m_extent.height > 0) ? (static_cast<float>(m_extent.width) / static_cast<float>(m_extent.height)) : 1.0f;
@@ -1266,12 +1283,7 @@ namespace Engine
                 ubo.proj = proj;
             }
 
-            void *mapped = nullptr;
-            if (vkMapMemory(m_device, camFrame->memory, 0, sizeof(CameraUBO), 0, &mapped) == VK_SUCCESS && mapped)
-            {
-                std::memcpy(mapped, &ubo, sizeof(CameraUBO));
-                vkUnmapMemory(m_device, camFrame->memory);
-            }
+            std::memcpy(camFrame->mapped, &ubo, sizeof(CameraUBO));
         }
 
         // Update instance buffer for this frame
@@ -1284,22 +1296,27 @@ namespace Engine
             if (!ensureInstanceCapacity(*instFrame, instanceCount))
                 return;
 
-            const glm::mat4 *src = m_instanceWorlds.empty() ? nullptr : m_instanceWorlds.data();
-            if (src)
+            if (instFrame->lastUploadedInstancesVersion != m_instancesVersion)
             {
-                std::memcpy(instFrame->mapped, src, sizeof(glm::mat4) * instanceCount);
-            }
-            else
-            {
-                const glm::mat4 I = identityMat4();
-                std::memcpy(instFrame->mapped, &I, sizeof(glm::mat4));
+                const glm::mat4 *src = m_instanceWorlds.empty() ? nullptr : m_instanceWorlds.data();
+                if (src)
+                {
+                    std::memcpy(instFrame->mapped, src, sizeof(glm::mat4) * instanceCount);
+                }
+                else
+                {
+                    const glm::mat4 I = identityMat4();
+                    std::memcpy(instFrame->mapped, &I, sizeof(glm::mat4));
+                }
+
+                instFrame->lastUploadedInstancesVersion = m_instancesVersion;
             }
         }
 
         // Update node palette buffer for this frame (SSBO in set=0 binding=1).
         const uint32_t nodeCount = model->nodes.empty() ? 1u : static_cast<uint32_t>(model->nodes.size());
         const uint32_t neededMatrices = instanceCount * nodeCount;
-        if (camFrame && camFrame->paletteMapped)
+        if (camFrame && camFrame->paletteMapped && camFrame->lastUploadedNodePaletteVersion != m_nodePaletteVersion)
         {
             if (!ensurePaletteCapacity(*camFrame, neededMatrices))
                 return;
@@ -1329,12 +1346,14 @@ namespace Engine
                 }
                 std::memcpy(camFrame->paletteMapped, fallback.data(), sizeof(glm::mat4) * expected);
             }
+
+            camFrame->lastUploadedNodePaletteVersion = m_nodePaletteVersion;
         }
 
         // Update joint palette buffer for this frame (SSBO in set=0 binding=2).
         const uint32_t jointStride = (model->totalJointCount > 0) ? model->totalJointCount : 1u;
         const uint32_t neededJointMatrices = instanceCount * jointStride;
-        if (camFrame && camFrame->jointPaletteMapped)
+        if (camFrame && camFrame->jointPaletteMapped && camFrame->lastUploadedJointPaletteVersion != m_jointPaletteVersion)
         {
             if (!ensureJointPaletteCapacity(*camFrame, neededJointMatrices))
                 return;
@@ -1351,6 +1370,8 @@ namespace Engine
                 fallback.assign(expected, glm::mat4(1.0f));
                 std::memcpy(camFrame->jointPaletteMapped, fallback.data(), sizeof(glm::mat4) * expected);
             }
+
+            camFrame->lastUploadedJointPaletteVersion = m_jointPaletteVersion;
         }
 
         // Pass ordering like glTF: 0=OPAQUE,1=MASK,2=BLEND

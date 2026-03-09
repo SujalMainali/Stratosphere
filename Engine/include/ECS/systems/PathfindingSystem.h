@@ -19,6 +19,7 @@
 
 #include "ECS/SystemFormat.h"
 #include "ECS/systems/NavGrid.h"
+#include "utils/JobSystem.h"
 
 #include <algorithm>
 #include <cmath>
@@ -28,6 +29,11 @@
 class PathfindingSystem : public Engine::ECS::SystemBase
 {
 public:
+    // =====================
+    // TUNING CONSTANTS
+    // =====================
+    static constexpr uint32_t PARALLEL_DIRTY_ROW_THRESHOLD = 64;
+
     PathfindingSystem(const NavGrid *grid)
         : m_grid(grid)
     {
@@ -73,10 +79,16 @@ public:
             auto &paths = store.paths();
             const uint32_t n = store.size();
 
-            for (uint32_t i : dirtyRows)
+            const uint32_t scratchCount = (ecs.jobSystem ? (ecs.jobSystem->workerCount() + 1u) : 1u);
+            if (m_workerScratch.size() < scratchCount)
+                m_workerScratch.resize(scratchCount);
+
+            auto processRow = [&](uint32_t workerIndex, uint32_t i)
             {
                 if (i >= n)
-                    continue;
+                    return;
+
+                WorkerScratch &scratch = m_workerScratch[std::min(workerIndex, scratchCount - 1u)];
 
                 auto &pos = positions[i];
                 auto &tgt = targets[i];
@@ -87,7 +99,7 @@ public:
                     path.valid = false;
                     path.count = 0;
                     path.current = 0;
-                    continue;
+                    return;
                 }
 
                 // MoveTarget became dirty => treat this as a new goal and replan.
@@ -99,13 +111,24 @@ public:
                 const float oldTx = tgt.x;
                 const float oldTz = tgt.z;
 
-                runAStar(pos, tgt, path);
+                runAStar(scratch, pos, tgt, path);
 
                 if (tgt.x != oldTx || tgt.z != oldTz)
                 {
                     // Keep other systems (and future frames) aware that the goal changed.
                     ecs.markDirty(m_moveTargetId, archetypeId, i);
                 }
+            };
+
+            if (ecs.jobSystem && dirtyRows.size() >= PARALLEL_DIRTY_ROW_THRESHOLD)
+            {
+                ecs.jobSystem->parallelFor(static_cast<uint32_t>(dirtyRows.size()), [&](uint32_t worker, uint32_t item)
+                                           { processRow(worker, dirtyRows[item]); });
+            }
+            else
+            {
+                for (uint32_t i : dirtyRows)
+                    processRow(0u, i);
             }
         }
     }
@@ -115,21 +138,27 @@ private:
     Engine::ECS::QueryId m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     uint32_t m_moveTargetId = Engine::ECS::ComponentRegistry::InvalidID;
 
-    uint32_t m_currentGen = 0;
-    std::vector<uint32_t> m_genStamp;
-    std::vector<float> m_gScores;
-    std::vector<int> m_cameFrom;
-    std::vector<uint32_t> m_closedGen;
-
     struct NodeEntry
     {
         int idx;
         float fCost;
         bool operator>(const NodeEntry &o) const { return fCost > o.fCost; }
     };
-    std::vector<NodeEntry> m_heapBuf;
-    std::vector<int> m_pathIndices;
-    std::vector<int> m_smoothedIdx;
+
+    struct WorkerScratch
+    {
+        uint32_t currentGen = 0;
+        std::vector<uint32_t> genStamp;
+        std::vector<float> gScores;
+        std::vector<int> cameFrom;
+        std::vector<uint32_t> closedGen;
+
+        std::vector<NodeEntry> heapBuf;
+        std::vector<int> pathIndices;
+        std::vector<int> smoothedIdx;
+    };
+
+    std::vector<WorkerScratch> m_workerScratch;
 
     static constexpr float kEpsilon = 1.2f;
 
@@ -140,39 +169,39 @@ private:
         return static_cast<float>(std::max(dx, dz)) + 0.414f * static_cast<float>(std::min(dx, dz));
     }
 
-    void ensureGridBuffers()
+    void ensureGridBuffers(WorkerScratch &s) const
     {
         const size_t gridSize = static_cast<size_t>(m_grid->width) * m_grid->height;
-        if (m_genStamp.size() < gridSize)
+        if (s.genStamp.size() < gridSize)
         {
-            m_genStamp.resize(gridSize, 0);
-            m_gScores.resize(gridSize, 1e9f);
-            m_cameFrom.resize(gridSize, -1);
-            m_closedGen.resize(gridSize, 0);
+            s.genStamp.resize(gridSize, 0);
+            s.gScores.resize(gridSize, 1e9f);
+            s.cameFrom.resize(gridSize, -1);
+            s.closedGen.resize(gridSize, 0);
         }
     }
 
-    bool isVisited(int idx) const { return m_genStamp[idx] == m_currentGen; }
-    bool isClosed(int idx) const { return m_closedGen[idx] == m_currentGen; }
+    static bool isVisited(const WorkerScratch &s, int idx) { return s.genStamp[idx] == s.currentGen; }
+    static bool isClosed(const WorkerScratch &s, int idx) { return s.closedGen[idx] == s.currentGen; }
 
-    float getG(int idx) const
+    static float getG(const WorkerScratch &s, int idx)
     {
-        return isVisited(idx) ? m_gScores[idx] : 1e9f;
+        return isVisited(s, idx) ? s.gScores[idx] : 1e9f;
     }
 
-    void setG(int idx, float g, int parent)
+    static void setG(WorkerScratch &s, int idx, float g, int parent)
     {
-        m_genStamp[idx] = m_currentGen;
-        m_gScores[idx] = g;
-        m_cameFrom[idx] = parent;
+        s.genStamp[idx] = s.currentGen;
+        s.gScores[idx] = g;
+        s.cameFrom[idx] = parent;
     }
 
-    void setClosed(int idx)
+    static void setClosed(WorkerScratch &s, int idx)
     {
-        m_closedGen[idx] = m_currentGen;
+        s.closedGen[idx] = s.currentGen;
     }
 
-    void runAStar(const Engine::ECS::Position &startPos, Engine::ECS::MoveTarget &target, Engine::ECS::Path &outPath)
+    void runAStar(WorkerScratch &s, const Engine::ECS::Position &startPos, Engine::ECS::MoveTarget &target, Engine::ECS::Path &outPath) const
     {
         const int W = m_grid->width;
         const int H = m_grid->height;
@@ -249,33 +278,33 @@ private:
             return;
         }
 
-        ensureGridBuffers();
-        ++m_currentGen;
-        if (m_currentGen == 0)
+        ensureGridBuffers(s);
+        ++s.currentGen;
+        if (s.currentGen == 0)
         {
-            std::fill(m_genStamp.begin(), m_genStamp.end(), 0u);
-            std::fill(m_closedGen.begin(), m_closedGen.end(), 0u);
-            m_currentGen = 1;
+            std::fill(s.genStamp.begin(), s.genStamp.end(), 0u);
+            std::fill(s.closedGen.begin(), s.closedGen.end(), 0u);
+            s.currentGen = 1;
         }
 
-        m_heapBuf.clear();
-        if (m_heapBuf.capacity() < 256)
-            m_heapBuf.reserve(256);
+        s.heapBuf.clear();
+        if (s.heapBuf.capacity() < 256)
+            s.heapBuf.reserve(256);
 
         auto heapPush = [&](int cellIdx, float f)
         {
-            m_heapBuf.push_back({cellIdx, f});
-            std::push_heap(m_heapBuf.begin(), m_heapBuf.end(), std::greater<NodeEntry>{});
+            s.heapBuf.push_back({cellIdx, f});
+            std::push_heap(s.heapBuf.begin(), s.heapBuf.end(), std::greater<NodeEntry>{});
         };
         auto heapPop = [&]() -> NodeEntry
         {
-            std::pop_heap(m_heapBuf.begin(), m_heapBuf.end(), std::greater<NodeEntry>{});
-            NodeEntry n = m_heapBuf.back();
-            m_heapBuf.pop_back();
+            std::pop_heap(s.heapBuf.begin(), s.heapBuf.end(), std::greater<NodeEntry>{});
+            NodeEntry n = s.heapBuf.back();
+            s.heapBuf.pop_back();
             return n;
         };
 
-        setG(startIdx, 0.0f, -1);
+        setG(s, startIdx, 0.0f, -1);
         const float startH = heuristic(startX, startZ, targetX, targetZ);
         heapPush(startIdx, kEpsilon * startH);
 
@@ -290,13 +319,13 @@ private:
         static constexpr int dzAddr[] = {-1, 1, 0, 0, -1, 1, -1, 1};
         static constexpr float costs[] = {1.0f, 1.0f, 1.0f, 1.0f, 1.414f, 1.414f, 1.414f, 1.414f};
 
-        while (!m_heapBuf.empty())
+        while (!s.heapBuf.empty())
         {
             const NodeEntry current = heapPop();
 
-            if (isClosed(current.idx))
+            if (isClosed(s, current.idx))
                 continue;
-            setClosed(current.idx);
+            setClosed(s, current.idx);
 
             if (++nodesExplored > MAX_NODES)
                 break;
@@ -307,7 +336,7 @@ private:
                 break;
             }
 
-            const float curG = getG(current.idx);
+            const float curG = getG(s, current.idx);
             const float curH = (current.fCost / kEpsilon) - curG + 0.001f;
             if (curH < closestH)
             {
@@ -329,7 +358,7 @@ private:
                 const int nIdx = idx(nx, nz);
                 if (m_grid->blocked[nIdx])
                     continue;
-                if (isClosed(nIdx))
+                if (isClosed(s, nIdx))
                     continue;
 
                 if (i >= 4)
@@ -340,9 +369,9 @@ private:
 
                 const float newG = curG + costs[i];
 
-                if (newG < getG(nIdx))
+                if (newG < getG(s, nIdx))
                 {
-                    setG(nIdx, newG, current.idx);
+                    setG(s, nIdx, newG, current.idx);
                     const float h = heuristic(nx, nz, targetX, targetZ);
                     heapPush(nIdx, newG + kEpsilon * h);
                 }
@@ -350,65 +379,65 @@ private:
         }
 
         int backIdx = found ? targetIdx : closestIdx;
-        m_pathIndices.clear();
+        s.pathIndices.clear();
 
         while (backIdx != startIdx)
         {
-            m_pathIndices.push_back(backIdx);
-            const int pIdx = m_cameFrom[backIdx];
+            s.pathIndices.push_back(backIdx);
+            const int pIdx = s.cameFrom[backIdx];
             if (pIdx < 0)
                 break;
             backIdx = pIdx;
-            if (m_pathIndices.size() > 200)
+            if (s.pathIndices.size() > 200)
                 break;
         }
 
-        std::reverse(m_pathIndices.begin(), m_pathIndices.end());
+        std::reverse(s.pathIndices.begin(), s.pathIndices.end());
 
-        m_smoothedIdx.clear();
-        m_smoothedIdx.reserve(m_pathIndices.size() + 1);
+        s.smoothedIdx.clear();
+        s.smoothedIdx.reserve(s.pathIndices.size() + 1);
 
         constexpr size_t kMaxLookahead = 16;
 
         int anchorX = startX, anchorZ = startZ;
         size_t pi = 0;
 
-        while (pi < m_pathIndices.size())
+        while (pi < s.pathIndices.size())
         {
             size_t bestAdvance = pi;
-            const size_t maxCheck = std::min(pi + kMaxLookahead + 1, m_pathIndices.size());
+            const size_t maxCheck = std::min(pi + kMaxLookahead + 1, s.pathIndices.size());
 
             for (size_t j = pi + 1; j < maxCheck; ++j)
             {
-                const int jx = idxToX(m_pathIndices[j]);
-                const int jz = idxToZ(m_pathIndices[j]);
+                const int jx = idxToX(s.pathIndices[j]);
+                const int jz = idxToZ(s.pathIndices[j]);
                 if (!m_grid->lineCheckGrid(anchorX, anchorZ, jx, jz))
                     break;
                 bestAdvance = j;
             }
 
-            const int chosen = m_pathIndices[bestAdvance];
-            m_smoothedIdx.push_back(chosen);
+            const int chosen = s.pathIndices[bestAdvance];
+            s.smoothedIdx.push_back(chosen);
             anchorX = idxToX(chosen);
             anchorZ = idxToZ(chosen);
             pi = bestAdvance + 1;
         }
 
-        if (!m_smoothedIdx.empty() && !m_pathIndices.empty() &&
-            m_smoothedIdx.back() != m_pathIndices.back())
+        if (!s.smoothedIdx.empty() && !s.pathIndices.empty() &&
+            s.smoothedIdx.back() != s.pathIndices.back())
         {
-            m_smoothedIdx.push_back(m_pathIndices.back());
+            s.smoothedIdx.push_back(s.pathIndices.back());
         }
 
         outPath.count = 0;
         outPath.current = 0;
 
-        for (size_t si = 0; si < m_smoothedIdx.size(); ++si)
+        for (size_t si = 0; si < s.smoothedIdx.size(); ++si)
         {
             if (outPath.count >= Engine::ECS::Path::MAX_WAYPOINTS)
                 break;
 
-            const bool isLast = (si == m_smoothedIdx.size() - 1);
+            const bool isLast = (si == s.smoothedIdx.size() - 1);
             if (isLast)
             {
                 outPath.waypointsX[outPath.count] = target.x;
@@ -416,8 +445,8 @@ private:
             }
             else
             {
-                outPath.waypointsX[outPath.count] = m_grid->gridToWorldX(idxToX(m_smoothedIdx[si]));
-                outPath.waypointsZ[outPath.count] = m_grid->gridToWorldZ(idxToZ(m_smoothedIdx[si]));
+                outPath.waypointsX[outPath.count] = m_grid->gridToWorldX(idxToX(s.smoothedIdx[si]));
+                outPath.waypointsZ[outPath.count] = m_grid->gridToWorldZ(idxToZ(s.smoothedIdx[si]));
             }
             outPath.count++;
         }

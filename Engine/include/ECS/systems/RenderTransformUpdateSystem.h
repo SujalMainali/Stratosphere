@@ -2,6 +2,7 @@
 
 #include "ECS/SystemFormat.h"
 #include "ECS/Components.h"
+#include "utils/JobSystem.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -13,6 +14,11 @@
 class RenderTransformUpdateSystem : public Engine::ECS::SystemBase
 {
 public:
+    // =====================
+    // TUNING CONSTANTS
+    // =====================
+    static constexpr uint32_t PARALLEL_DIRTY_ROW_THRESHOLD = 256;
+
     RenderTransformUpdateSystem()
     {
         setRequiredNames({"Position", "RenderTransform"});
@@ -51,8 +57,6 @@ public:
                 continue;
 
             auto dirtyRows = ecs.queries.consumeDirtyRows(m_queryId, archetypeId);
-            if (dirtyRows.empty())
-                continue;
 
             const uint32_t n = store.size();
             auto &positions = const_cast<std::vector<Engine::ECS::Position> &>(store.positions());
@@ -60,18 +64,32 @@ public:
             const bool hasFacing = store.hasFacing();
             auto &facings = hasFacing ? const_cast<std::vector<Engine::ECS::Facing> &>(store.facings()) : m_dummyFacings;
 
-            for (uint32_t row : dirtyRows)
+            // Dirty-driven update is great once the system is running, but newly spawned entities may not have
+            // their Position/Facing dirtied yet. Ensure we compute the initial world matrix once.
+            if (dirtyRows.empty())
+            {
+                dirtyRows.reserve(n);
+                for (uint32_t row = 0; row < n; ++row)
+                {
+                    if (transforms[row].transformVersion == 0)
+                        dirtyRows.push_back(row);
+                }
+                if (dirtyRows.empty())
+                    continue;
+            }
+
+            auto processRow = [&](uint32_t row)
             {
                 if (row >= n)
-                    continue;
+                    return;
 
                 const auto &pos = positions[row];
                 const float yaw = hasFacing ? facings[row].yaw : 0.0f;
 
                 if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z))
-                    continue;
+                    return;
                 if (hasFacing && !std::isfinite(yaw))
-                    continue;
+                    return;
 
                 glm::mat4 world = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, pos.y, pos.z));
                 if (hasFacing)
@@ -80,6 +98,17 @@ public:
                 auto &rt = transforms[row];
                 rt.world = world;
                 rt.transformVersion += 1u;
+            };
+
+            if (ecs.jobSystem && dirtyRows.size() >= PARALLEL_DIRTY_ROW_THRESHOLD)
+            {
+                ecs.jobSystem->parallelFor(static_cast<uint32_t>(dirtyRows.size()), [&](uint32_t /*worker*/, uint32_t item)
+                                           { processRow(dirtyRows[item]); });
+            }
+            else
+            {
+                for (uint32_t row : dirtyRows)
+                    processRow(row);
             }
         }
     }
