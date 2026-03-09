@@ -320,15 +320,6 @@ void BattleConfigEditor::drawControlButtons(Engine::ECS::ECSContext &ecs, System
         m_statusTimer = 3.0f;
     }
 
-    ImGui::SameLine();
-
-    if (ImGui::Button("Save Config"))
-    {
-        saveSpawnGroupsToFile();
-        m_statusMsg = "Config saved to " + m_battleConfigPath;
-        m_statusTimer = 3.0f;
-    }
-
     if (ImGui::Button("Reset Game"))
     {
         resetGame(ecs, systems);
