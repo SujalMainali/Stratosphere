@@ -1,34 +1,25 @@
 #pragma once
 
-#include "systems/CombatSystem.h"
 #include "ECS/ECSContext.h"
-#include "ScenarioSpawner.h"
+#include "editor/GameWorldSpawner.h"
 
 #include <filesystem>
 #include <string>
 
-namespace Sample
-{
-    class SystemRunner;
-}
-
 namespace Editor
 {
-    // ImGui-based editor for BattleConfig.json combat tuning and spawn groups.
+    // ImGui-based editor for GameWorld.json combat tuning and spawn groups.
     // Intended to run in the standalone EditorApp.
     class BattleConfigEditor
     {
     public:
         BattleConfigEditor();
 
-        // Load combat tuning and spawn groups from BattleConfig.json.
-        void loadFromFile(const std::string &path = "BattleConfig.json");
-
-        // Load unit defaults from a prefab JSON (e.g. CombatKnight.json).
-        void loadUnitConfig(const std::string &path = "entities/CombatKnight.json");
+        // Load combat tuning and spawn groups from GameWorld.json.
+        void loadFromFile(const std::string &path = "GameWorld.json");
 
         // Draw the editor panel (no-op when hidden). Call inside Application::OnRender().
-        void draw(Engine::ECS::ECSContext &ecs, Sample::SystemRunner &systems);
+        void draw(Engine::ECS::ECSContext &ecs);
 
         void toggleVisible() { m_visible = !m_visible; }
         bool isVisible() const { return m_visible; }
@@ -36,30 +27,35 @@ namespace Editor
     private:
         void drawCombatSection();
         void drawSpawnGroupsSection();
-        void drawControlButtons(Engine::ECS::ECSContext &ecs, Sample::SystemRunner &systems);
+        void drawControlButtons(Engine::ECS::ECSContext &ecs);
 
         void writeWorkingCopy(const std::string &outPath);
         bool writePermanent();
-        void reloadFromDisk(Engine::ECS::ECSContext &ecs, Sample::SystemRunner &systems);
+        void reloadFromDisk(Engine::ECS::ECSContext &ecs);
 
-        void applyToSystems(Sample::SystemRunner &systems);
-        void applyUnitParamsToEntities(Engine::ECS::ECSContext &ecs);
-        void respawnFromPath(Engine::ECS::ECSContext &ecs, Sample::SystemRunner &systems, const std::string &scenarioPath);
-        void respawnWorkingCopy(Engine::ECS::ECSContext &ecs, Sample::SystemRunner &systems);
-        void resetGame(Engine::ECS::ECSContext &ecs, Sample::SystemRunner &systems);
+        void respawnFromPath(Engine::ECS::ECSContext &ecs, const std::string &scenarioPath);
+        void respawnWorkingCopy(Engine::ECS::ECSContext &ecs);
+        void resetGame(Engine::ECS::ECSContext &ecs);
         void clearAllEntities(Engine::ECS::ECSContext &ecs);
 
-        CombatSystem::CombatConfig m_combat;
-        CombatSystem::CombatConfig m_originalCombat;
-
-        struct UnitParams
+        struct CombatConfig
         {
-            float health = 140.0f;
-            float moveSpeed = 5.0f;
-            float radius = 1.5f;
-            float separation = 1.0f;
-            float attackInterval = 1.5f;
+            float meleeRange = 2.0f;
+            float engageRange = 10.0f;
+            float damageMin = 12.0f;
+            float damageMax = 28.0f;
+            float deathRemoveDelay = 3.0f;
+            float maxHPPerUnit = 140.0f;
+            float missChance = 0.20f;
+            float critChance = 0.10f;
+            float critMultiplier = 2.0f;
+            float rageMaxBonus = 0.50f;
+            float cooldownJitter = 0.30f;
+            float staggerMax = 0.60f;
         };
+
+        CombatConfig m_combat;
+        CombatConfig m_originalCombat;
 
         struct SpawnGroupParams
         {
@@ -69,7 +65,6 @@ namespace Editor
             int columns = 5;
             float spacing = 5.0f;
             float jitter = 0.2f;
-            UnitParams unit;
         };
 
         SpawnGroupParams m_teamA;
@@ -78,15 +73,13 @@ namespace Editor
         SpawnGroupParams m_originalTeamB;
 
         bool m_visible = true;
-        std::string m_battleConfigPath = "BattleConfig.json";
-        std::string m_unitConfigPath = "entities/CombatKnight.json";
+        std::string m_battleConfigPath = "GameWorld.json";
         std::string m_workingCopyPath;
 
         std::string m_statusMsg;
         float m_statusTimer = 0.0f;
 
         std::filesystem::file_time_type m_battleLastWriteTime{};
-        std::filesystem::file_time_type m_unitLastWriteTime{};
         float m_watchPollTimer = 0.0f;
         static constexpr float kWatchPollInterval = 0.5f;
     };

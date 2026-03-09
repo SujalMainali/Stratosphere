@@ -1,0 +1,33 @@
+{
+    "components": [
+        "Position",
+        "Obstacle",
+        "ObstacleRadius",
+        "RenderMesh",
+        "Facing",
+        "RenderModel",
+        "RenderAnimation"
+    ],
+    "defaults": {
+        "Facing": {
+            "yaw": 0.0
+        },
+        "Obstacle": {},
+        "ObstacleRadius": {
+            "r": 1.5
+        },
+        "Position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+        },
+        "RenderAnimation": {
+            "clipIndex": 0,
+            "playing": false
+        }
+    },
+    "name": "TreeStumpWall",
+    "visual": {
+        "model": "assets/fence/cerca.smodel"
+    }
+}

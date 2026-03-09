@@ -83,6 +83,26 @@ namespace Engine
 
     Application::~Application() = default;
 
+    void Application::SetPerformanceMonitorEnabled(bool enabled)
+    {
+        if (enabled)
+        {
+            // Not currently supported to re-create after disabling.
+            return;
+        }
+
+        if (!m_Impl)
+            return;
+
+        m_Impl->perfMonitor.reset();
+
+        // Remove any ImGui callback that referenced the perf monitor.
+        if (m_Impl->imguiLayer)
+        {
+            m_Impl->imguiLayer->setRenderCallback([]() {});
+        }
+    }
+
     void Application::Run()
     {
         auto lastFrameTime = std::chrono::steady_clock::now();
@@ -180,14 +200,6 @@ namespace Engine
         if (name == "WindowClose")
         {
             Close();
-        }
-        if (name == "F1Pressed")
-        {
-            // Toggle performance monitor overlay
-            if (m_Impl->perfMonitor)
-            {
-                m_Impl->perfMonitor->toggle();
-            }
         }
         if (name == "WindowResize")
         {

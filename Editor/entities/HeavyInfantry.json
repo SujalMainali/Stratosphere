@@ -1,0 +1,73 @@
+{
+    "name": "HeavyInfantry",
+    "components": [
+        "Position",
+        "Velocity",
+        "Health",
+        "MoveTarget",
+        "MoveSpeed",
+        "Radius",
+        "Separation",
+        "AvoidanceParams",
+        "RenderMesh",
+        "Facing",
+        "Path",
+        "LocomotionClips"
+    ],
+    "defaults": {
+        "Position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+        },
+        "Velocity": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+        },
+        "Health": {
+            "value": 140.0
+        },
+        "MoveTarget": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "active": 0
+        },
+        "MoveSpeed": {
+            "value": 5.0
+        },
+        "Radius": {
+            "r": 0.5
+        },
+        "Separation": {
+            "value": 0.3
+        },
+        "AvoidanceParams": {
+            "strength": 3.0,
+            "maxAccel": 30.0,
+            "blend": 0.55,
+            "predictionTime": 0.55,
+            "nearGoalRadius": 2.0,
+            "nearGoalBoost": 2.5,
+            "stoppedBoost": 2.0,
+            "pressureBoost": 1.5,
+            "interactSlack": 0.35,
+            "falloffWeight": 0.35,
+            "predictiveWeight": 0.75,
+            "maxStopSpeed": 0.9
+        },
+        "Facing": {
+            "yaw": 0.0
+        },
+        "Path": {},
+        "LocomotionClips": {
+            "idleClip": 65,
+            "walkClip": 112,
+            "runClip": 28
+        }
+    },
+    "visual": {
+        "model": "assets/Knight/Knight.smodel"
+    }
+}

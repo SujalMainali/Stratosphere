@@ -54,7 +54,11 @@ namespace Engine
         void SetEventCallback(const EventCallbackFn &callback);
 
         // Access to ImGuiLayer for texture registration with ImGui (optional)
-        ImGuiLayer* GetImGuiLayer();
+        ImGuiLayer *GetImGuiLayer();
+
+        // Optional: disable the engine performance monitor/overlay for apps that don't want it.
+        // Safe to call at any time (typically from derived Application ctor).
+        void SetPerformanceMonitorEnabled(bool enabled);
 
     private:
         struct Impl;

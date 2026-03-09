@@ -3,8 +3,9 @@
 #include "Engine/Application.h"
 #include "Engine/Camera.h"
 
-#include "update.h"
+#include "EditorRenderRunner.h"
 #include "editor/BattleConfigEditor.h"
+#include "editor/EntityTypeEditor.h"
 
 #include "assets/Handles.h"
 
@@ -30,7 +31,9 @@ public:
 
 private:
     void setupECSFromPrefabs();
-    void applyCombatConfigFromFile();
+    void loadPrefabsFromDir(const std::string &dirPath);
+    void reloadPrefabsAndRespawnWorld();
+    void clearAllEntities();
     void OnEvent(const std::string &name);
     void ApplyRTSCamera(float aspect);
 
@@ -49,6 +52,7 @@ private:
     };
 
     std::string m_battleConfigPath;
+    std::string m_editorEntitiesDir;
 
     std::unique_ptr<Engine::AssetManager> m_assets;
     RTSCameraController m_rtsCam;
@@ -61,6 +65,9 @@ private:
     Engine::TextureHandle m_groundTexture;
     std::shared_ptr<Engine::GroundPlaneRenderPassModule> m_groundPass;
 
-    Sample::SystemRunner m_systems;
+    Editor::EditorRenderRunner m_render;
     Editor::BattleConfigEditor m_configEditor;
+    Editor::EntityTypeEditor m_entityEditor;
+
+    bool m_showEntityEditor = true;
 };

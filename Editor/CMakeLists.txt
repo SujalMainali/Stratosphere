@@ -5,19 +5,23 @@ add_executable(EditorApp
     src/main.cpp
     src/EditorApp.cpp
     src/BattleConfigEditor.cpp
+    src/EditorRenderRunner.cpp
+    src/EntityTypeEditor.cpp
+    src/GameWorldSpawner.cpp
 )
 
-target_link_libraries(EditorApp PRIVATE SampleGame)
+target_link_libraries(EditorApp PRIVATE Engine)
+target_link_libraries(EditorApp PRIVATE nlohmann_json::nlohmann_json)
 
-# Default config path (used when no CLI arg is provided)
+# Default paths (used when no CLI arg is provided)
 target_compile_definitions(EditorApp PRIVATE
-    STRATO_DEFAULT_BATTLE_CONFIG_PATH="${CMAKE_SOURCE_DIR}/Sample/BattleConfig.json"
+    STRATO_DEFAULT_GAME_WORLD_PATH="${CMAKE_SOURCE_DIR}/Editor/GameWorld.json"
+    STRATO_EDITOR_ENTITIES_DIR="${CMAKE_SOURCE_DIR}/Editor/entities"
 )
 
 target_include_directories(EditorApp PRIVATE
     ${CMAKE_SOURCE_DIR}/Editor/include
     ${CMAKE_SOURCE_DIR}/Engine/include
-    ${CMAKE_SOURCE_DIR}/Sample
 )
 
 # ------------------------------------------------------------
@@ -33,17 +37,17 @@ foreach(SPIRV ${SHADER_SPV})
     )
 endforeach()
 
-# Copy battle config next to the executable.
+# Copy editor GameWorld next to the executable.
 add_custom_command(TARGET EditorApp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/Sample/BattleConfig.json"
-        $<TARGET_FILE_DIR:EditorApp>/BattleConfig.json
-    COMMENT "Copying battle config JSON: ${CMAKE_SOURCE_DIR}/Sample/BattleConfig.json"
+        "${CMAKE_SOURCE_DIR}/Editor/GameWorld.json"
+        $<TARGET_FILE_DIR:EditorApp>/GameWorld.json
+    COMMENT "Copying GameWorld JSON: ${CMAKE_SOURCE_DIR}/Editor/GameWorld.json"
 )
 
-# Copy all *.json in Sample/entities to runtime output (EditorApp/entities/)
-file(GLOB_RECURSE SAMPLE_ENTITY_JSON_FILES CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/Sample/entities/*.json"
+# Copy all *.json in Editor/entities to runtime output (EditorApp/entities/)
+file(GLOB_RECURSE EDITOR_ENTITY_JSON_FILES CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/Editor/entities/*.json"
 )
 
 add_custom_command(TARGET EditorApp POST_BUILD
@@ -52,7 +56,7 @@ add_custom_command(TARGET EditorApp POST_BUILD
     COMMENT "Preparing entities output directory"
 )
 
-foreach(JSON_FILE ${SAMPLE_ENTITY_JSON_FILES})
+foreach(JSON_FILE ${EDITOR_ENTITY_JSON_FILES})
     add_custom_command(TARGET EditorApp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${JSON_FILE}"
@@ -66,38 +70,27 @@ add_custom_command(TARGET EditorApp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
         $<TARGET_FILE_DIR:EditorApp>/assets/raw
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/Sample/assets/raw
+        ${CMAKE_SOURCE_DIR}/Editor/assets/raw
         $<TARGET_FILE_DIR:EditorApp>/assets/raw
     COMMENT "Copying raw assets (images) to runtime output"
 )
 
-# Cooked assets are produced by the Sample asset pipeline targets.
-# If those targets exist, depend on them so EditorApp has the same runtime assets.
-if (TARGET ProcessSampleGLTFAssets)
-    add_dependencies(EditorApp ProcessSampleGLTFAssets)
-
-    add_custom_target(CopyEditorSMODELAssets ALL
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            $<TARGET_FILE_DIR:EditorApp>/assets
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/Sample/assets/cooked/GltfModels
-            $<TARGET_FILE_DIR:EditorApp>/assets
-        DEPENDS ProcessSampleGLTFAssets
-        COMMENT "Copying Sample SMODEL assets to Editor runtime output"
-    )
-    add_dependencies(EditorApp CopyEditorSMODELAssets)
-endif()
-
-if (TARGET ProcessSampleOBJAssets)
-    add_dependencies(EditorApp ProcessSampleOBJAssets)
-endif()
+# Copy cooked SMODEL assets next to the executable for relative imports
+add_custom_command(TARGET EditorApp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        $<TARGET_FILE_DIR:EditorApp>/assets
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/Editor/assets/cooked/GltfModels
+        $<TARGET_FILE_DIR:EditorApp>/assets
+    COMMENT "Copying Editor SMODEL assets to runtime output"
+)
 
 # Copy cooked SMESH assets next to the executable for relative imports
 add_custom_command(TARGET EditorApp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
         $<TARGET_FILE_DIR:EditorApp>/assets/ObjModels
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/Sample/assets/cooked/ObjModels
+        ${CMAKE_SOURCE_DIR}/Editor/assets/cooked/ObjModels
         $<TARGET_FILE_DIR:EditorApp>/assets/ObjModels
-    COMMENT "Copying Sample SMESH assets to Editor runtime output"
+    COMMENT "Copying Editor SMESH assets to runtime output"
 )

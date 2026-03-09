@@ -57,6 +57,8 @@ namespace Engine::ECS
     public:
         void add(const Prefab &p) { m_prefabs[p.name] = p; }
 
+        void clear() { m_prefabs.clear(); }
+
         const Prefab *get(const std::string &name) const
         {
             auto it = m_prefabs.find(name);

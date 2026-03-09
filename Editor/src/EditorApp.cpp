@@ -11,7 +11,11 @@
 #include "assets/AssetManager.h"
 #include "Engine/GroundPlaneRenderPassModule.h"
 
+#include "editor/GameWorldSpawner.h"
+
 #include <nlohmann/json.hpp>
+
+#include <imgui.h>
 
 #include <fstream>
 #include <filesystem>
@@ -26,8 +30,17 @@ using json = nlohmann::json;
 
 EditorApp::EditorApp(std::string battleConfigPath)
     : Engine::Application(),
-      m_battleConfigPath(std::move(battleConfigPath))
+      m_battleConfigPath(std::move(battleConfigPath)),
+#if defined(STRATO_EDITOR_ENTITIES_DIR)
+      m_editorEntitiesDir(std::string(STRATO_EDITOR_ENTITIES_DIR)),
+#else
+      m_editorEntitiesDir(std::string("entities")),
+#endif
+      m_entityEditor(m_editorEntitiesDir)
 {
+    // Editor uses F1 for UI toggling; disable perf monitor/overlay entirely.
+    SetPerformanceMonitorEnabled(false);
+
     m_assets = std::make_unique<Engine::AssetManager>(
         GetVulkanContext().GetDevice(),
         GetVulkanContext().GetPhysicalDevice(),
@@ -48,10 +61,10 @@ EditorApp::EditorApp(std::string battleConfigPath)
     win.GetCursorPosition(mx, my);
     m_lastMouse = {static_cast<float>(mx), static_cast<float>(my)};
 
-    // Systems can resolve assets
-    m_systems.SetAssetManager(m_assets.get());
-    m_systems.SetRenderer(&GetRenderer());
-    m_systems.SetCamera(&m_camera);
+    // Render-only runner (no gameplay simulation)
+    m_render.SetAssetManager(m_assets.get());
+    m_render.SetRenderer(&GetRenderer());
+    m_render.SetCamera(&m_camera);
 
     // Optional ground plane (if assets exist)
     {
@@ -91,13 +104,9 @@ EditorApp::EditorApp(std::string battleConfigPath)
     }
 
     setupECSFromPrefabs();
-    GetECS().WireQueryManager();
-    m_systems.Initialize(GetECS());
-
-    applyCombatConfigFromFile();
+    m_render.Initialize(GetECS());
 
     m_configEditor.loadFromFile(m_battleConfigPath);
-    m_configEditor.loadUnitConfig("entities/CombatKnight.json");
 
     SetEventCallback([this](const std::string &e)
                      { this->OnEvent(e); });
@@ -173,7 +182,9 @@ void EditorApp::OnUpdate(Engine::TimeStep ts)
 
     ApplyRTSCamera(aspect);
 
-    m_systems.Update(GetECS(), ts.DeltaSeconds);
+    // Keep render-related data updated, but do not run gameplay systems.
+    (void)ts;
+    m_render.Update(GetECS(), 0.0f);
 }
 
 void EditorApp::OnRender()
@@ -182,17 +193,54 @@ void EditorApp::OnRender()
     if (!layer || !layer->isInitialized() || ImGui::GetCurrentContext() == nullptr)
         return;
 
-    m_configEditor.draw(GetECS(), m_systems);
+    auto &ecs = GetECS();
+    m_configEditor.draw(ecs);
+
+    if (!m_showEntityEditor)
+        return;
+
+    ImGuiIO &io = ImGui::GetIO();
+    const float panelWidth = 520.0f;
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(panelWidth, io.DisplaySize.y), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowBgAlpha(0.78f);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    ImGui::Begin("Editor: Entity Types", nullptr, flags);
+
+    Editor::EntityTypeEditor::Callbacks cb;
+    cb.reloadPrefabsAndRespawn = [](void *user)
+    {
+        auto *self = static_cast<EditorApp *>(user);
+        self->reloadPrefabsAndRespawnWorld();
+    };
+    cb.user = this;
+
+    m_entityEditor.draw(ecs, *m_assets, cb);
+
+    ImGui::End();
 }
 
 void EditorApp::setupECSFromPrefabs()
 {
     auto &ecs = GetECS();
 
-    size_t prefabCount = 0;
+    ecs.prefabs.clear();
+    loadPrefabsFromDir("entities");
+    loadPrefabsFromDir(m_editorEntitiesDir);
+
+    Editor::SpawnFromGameWorldFile(ecs, m_battleConfigPath, /*selectSpawned=*/false);
+}
+
+void EditorApp::loadPrefabsFromDir(const std::string &dirPath)
+{
+    auto &ecs = GetECS();
     try
     {
-        for (const auto &entry : std::filesystem::directory_iterator("entities"))
+        if (!std::filesystem::exists(dirPath) || !std::filesystem::is_directory(dirPath))
+            return;
+
+        for (const auto &entry : std::filesystem::directory_iterator(dirPath))
         {
             if (!entry.is_regular_file())
                 continue;
@@ -209,74 +257,40 @@ void EditorApp::setupECSFromPrefabs()
                 continue;
 
             ecs.prefabs.add(p);
-            ++prefabCount;
         }
     }
     catch (...)
     {
-        return;
     }
-
-    if (prefabCount == 0)
-        return;
-
-    Sample::SpawnFromScenarioFile(ecs, m_battleConfigPath, /*selectSpawned=*/false);
 }
 
-void EditorApp::applyCombatConfigFromFile()
+void EditorApp::clearAllEntities()
 {
-    try
+    auto &ecs = GetECS();
+    for (const auto &storePtr : ecs.stores.stores())
     {
-        std::ifstream cfgFile(m_battleConfigPath);
-        if (!cfgFile.is_open())
-            return;
+        if (!storePtr)
+            continue;
 
-        json root = json::parse(cfgFile);
-        if (!root.contains("combat") || !root["combat"].is_object())
-            return;
-
-        const auto &c = root["combat"];
-        CombatSystem::CombatConfig cfg;
-
-        if (c.contains("meleeRange"))
-            cfg.meleeRange = c["meleeRange"].get<float>();
-        if (c.contains("engageRange"))
-            cfg.engageRange = c["engageRange"].get<float>();
-        if (c.contains("damageMin"))
-            cfg.damageMin = c["damageMin"].get<float>();
-        if (c.contains("damageMax"))
-            cfg.damageMax = c["damageMax"].get<float>();
-
-        if (c.contains("damagePerHit") && !c.contains("damageMin"))
+        while (storePtr->size() > 0)
         {
-            float d = c["damagePerHit"].get<float>();
-            cfg.damageMin = d * 0.6f;
-            cfg.damageMax = d * 1.4f;
+            Engine::ECS::Entity e = storePtr->entities()[storePtr->size() - 1];
+            ecs.entities.destroy(e);
+            storePtr->destroyRow(storePtr->size() - 1);
         }
-
-        if (c.contains("deathRemoveDelay"))
-            cfg.deathRemoveDelay = c["deathRemoveDelay"].get<float>();
-        if (c.contains("maxHPPerUnit"))
-            cfg.maxHPPerUnit = c["maxHPPerUnit"].get<float>();
-        if (c.contains("missChance"))
-            cfg.missChance = c["missChance"].get<float>();
-        if (c.contains("critChance"))
-            cfg.critChance = c["critChance"].get<float>();
-        if (c.contains("critMultiplier"))
-            cfg.critMultiplier = c["critMultiplier"].get<float>();
-        if (c.contains("rageMaxBonus"))
-            cfg.rageMaxBonus = c["rageMaxBonus"].get<float>();
-        if (c.contains("cooldownJitter"))
-            cfg.cooldownJitter = c["cooldownJitter"].get<float>();
-        if (c.contains("staggerMax"))
-            cfg.staggerMax = c["staggerMax"].get<float>();
-
-        m_systems.GetCombatSystemMut().applyConfig(cfg);
-        m_systems.GetCombatSystemMut().setHumanTeam(0);
     }
-    catch (...)
-    {
-    }
+}
+
+void EditorApp::reloadPrefabsAndRespawnWorld()
+{
+    auto &ecs = GetECS();
+    clearAllEntities();
+
+    ecs.prefabs.clear();
+    loadPrefabsFromDir("entities");
+    loadPrefabsFromDir(m_editorEntitiesDir);
+
+    Editor::SpawnFromGameWorldFile(ecs, m_battleConfigPath, /*selectSpawned=*/false);
 }
 
 void EditorApp::OnEvent(const std::string &name)
@@ -321,6 +335,12 @@ void EditorApp::OnEvent(const std::string &name)
     if (name == "F2Pressed")
     {
         m_configEditor.toggleVisible();
+        return;
+    }
+
+    if (name == "F1Pressed")
+    {
+        m_showEntityEditor = !m_showEntityEditor;
         return;
     }
 
