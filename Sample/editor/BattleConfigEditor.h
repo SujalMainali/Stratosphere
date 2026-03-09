@@ -6,7 +6,6 @@
 
 #include <string>
 #include <filesystem>
-#include <chrono>
 
 namespace Sample
 {
@@ -77,13 +76,15 @@ namespace Sample
         // --- State ---
         bool m_visible = true;
         std::string m_battleConfigPath = "BattleConfig.json";
+        std::string m_unitConfigPath   = "entities/CombatKnight.json";
         std::string m_liveConfigPath;
 
         std::string m_statusMsg;
         float m_statusTimer = 0.0f;
 
-        // File-watcher state (polling-based)
-        std::filesystem::file_time_type m_lastWriteTime{};
+        // File-watcher state (polling-based) — watches both config files
+        std::filesystem::file_time_type m_battleLastWriteTime{};
+        std::filesystem::file_time_type m_unitLastWriteTime{};
         float m_watchPollTimer = 0.0f;
         static constexpr float kWatchPollInterval = 0.5f; // seconds
     };

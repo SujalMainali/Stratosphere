@@ -5,8 +5,6 @@
 #include <nlohmann/json.hpp>
 
 #include <fstream>
-#include <iostream>
-#include <filesystem>
 
 using json = nlohmann::json;
 
@@ -109,7 +107,7 @@ void BattleConfigEditor::loadFromFile(const std::string &path)
     m_statusTimer = 2.0f;
 
     // Snapshot the file's last-write-time for the file watcher.
-    try { m_lastWriteTime = std::filesystem::last_write_time(m_battleConfigPath); }
+    try { m_battleLastWriteTime = std::filesystem::last_write_time(m_battleConfigPath); }
     catch (...) {}
 }
 
@@ -118,6 +116,8 @@ void BattleConfigEditor::loadFromFile(const std::string &path)
 // ---------------------------------------------------------------------------
 void BattleConfigEditor::loadUnitConfig(const std::string &path)
 {
+    m_unitConfigPath = path;
+
     std::ifstream file(path);
     if (!file.is_open())
         return;
@@ -147,6 +147,10 @@ void BattleConfigEditor::loadUnitConfig(const std::string &path)
 
     m_originalTeamA = m_teamA;
     m_originalTeamB = m_teamB;
+
+    // Snapshot the file's last-write-time for the file watcher.
+    try { m_unitLastWriteTime = std::filesystem::last_write_time(m_unitConfigPath); }
+    catch (...) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -154,23 +158,36 @@ void BattleConfigEditor::loadUnitConfig(const std::string &path)
 // ---------------------------------------------------------------------------
 void BattleConfigEditor::draw(Engine::ECS::ECSContext &ecs, SystemRunner &systems)
 {
-    // --- File-watcher: poll for external edits to BattleConfig.json ---
+    // --- File-watcher: poll for external edits to config files ---
     {
         float dt = ImGui::GetIO().DeltaTime;
         m_watchPollTimer += dt;
         if (m_watchPollTimer >= kWatchPollInterval)
         {
             m_watchPollTimer = 0.0f;
+            bool changed = false;
             try
             {
                 auto t = std::filesystem::last_write_time(m_battleConfigPath);
-                if (t != m_lastWriteTime)
+                if (t != m_battleLastWriteTime)
                 {
-                    m_lastWriteTime = t;
-                    reloadFromDisk(ecs, systems);
+                    m_battleLastWriteTime = t;
+                    changed = true;
                 }
             }
             catch (...) {}
+            try
+            {
+                auto t = std::filesystem::last_write_time(m_unitConfigPath);
+                if (t != m_unitLastWriteTime)
+                {
+                    m_unitLastWriteTime = t;
+                    changed = true;
+                }
+            }
+            catch (...) {}
+            if (changed)
+                reloadFromDisk(ecs, systems);
         }
     }
 
@@ -461,13 +478,13 @@ void BattleConfigEditor::resetGame(Engine::ECS::ECSContext &ecs, SystemRunner &s
 }
 
 // ---------------------------------------------------------------------------
-// File-watcher callback: reload the original BattleConfig.json from disk,
-// update all editor sliders, and respawn.
+// File-watcher callback: reload config files from disk and respawn.
 // ---------------------------------------------------------------------------
 void BattleConfigEditor::reloadFromDisk(Engine::ECS::ECSContext &ecs, SystemRunner &systems)
 {
-    // Re-parse from the original file (user edited it externally).
+    // Re-parse both config files (either or both may have changed).
     loadFromFile(m_battleConfigPath);
+    loadUnitConfig(m_unitConfigPath);
 
     // Respawn with the freshly-loaded values.
     respawn(ecs, systems);
