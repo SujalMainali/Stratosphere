@@ -62,6 +62,9 @@ namespace Engine
             VkDeviceMemory memory = VK_NULL_HANDLE;
             void *mapped = nullptr;
             uint32_t capacity = 0;
+
+            // Tracks which CPU-side instance data version has been uploaded into this frame's buffer.
+            uint64_t lastUploadedInstancesVersion = 0;
         };
 
         struct PushConstantsModel
@@ -102,7 +105,12 @@ namespace Engine
         {
             VkBuffer buffer = VK_NULL_HANDLE;
             VkDeviceMemory memory = VK_NULL_HANDLE;
+            void *mapped = nullptr;
             VkDescriptorSet set = VK_NULL_HANDLE;
+
+            // Tracks which CPU-side palette versions have been uploaded into this frame's SSBOs.
+            uint64_t lastUploadedNodePaletteVersion = 0;
+            uint64_t lastUploadedJointPaletteVersion = 0;
 
             VkBuffer paletteBuffer = VK_NULL_HANDLE;
             VkDeviceMemory paletteMemory = VK_NULL_HANDLE;
@@ -160,12 +168,17 @@ namespace Engine
         std::vector<InstanceFrame> m_instanceFrames;
         std::vector<glm::mat4> m_instanceWorlds;
 
+        uint64_t m_instancesVersion = 1;
+
         // Flattened node globals uploaded to a per-frame SSBO
         std::vector<glm::mat4> m_nodePalette;
         std::vector<glm::mat4> m_jointPalette;
         uint32_t m_jointPaletteJointCount = 0;
         uint32_t m_paletteInstanceCount = 0;
         uint32_t m_paletteNodeCount = 0;
+
+        uint64_t m_nodePaletteVersion = 1;
+        uint64_t m_jointPaletteVersion = 1;
 
         TextureAsset m_fallbackWhiteTexture;
 

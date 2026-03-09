@@ -23,8 +23,10 @@ public:
     explicit RenderSystem(Engine::AssetManager *assets = nullptr)
         : m_assets(assets)
     {
-        // We need Position to build a model matrix later.
-        setRequiredNames({"RenderModel", "PosePalette", "Position"});
+        // RenderModel provides the model handle.
+        // PosePalette provides per-entity node/joint palettes.
+        // RenderTransform provides the cached world matrix.
+        setRequiredNames({"RenderModel", "PosePalette", "RenderTransform"});
         setExcludedNames({"Disabled", "Dead"});
     }
 
@@ -45,18 +47,21 @@ public:
             return (static_cast<uint64_t>(h.generation) << 32) | static_cast<uint64_t>(h.id);
         };
 
-        struct PerModelBatch
+        auto fnv1aMixU32 = [](uint64_t h, uint32_t v) -> uint64_t
         {
-            std::vector<glm::mat4> instanceWorlds;
-            std::vector<glm::mat4> nodePalette; // flattened: [instance][node]
-            uint32_t nodeCount = 0;
-
-            std::vector<glm::mat4> jointPalette; // flattened: [instance][joint]
-            uint32_t jointCount = 0;
+            // FNV-1a 64-bit (mix 4 bytes in a stable way)
+            h ^= static_cast<uint64_t>(v) & 0xFFu;
+            h *= 1099511628211ull;
+            h ^= static_cast<uint64_t>((v >> 8) & 0xFFu);
+            h *= 1099511628211ull;
+            h ^= static_cast<uint64_t>((v >> 16) & 0xFFu);
+            h *= 1099511628211ull;
+            h ^= static_cast<uint64_t>((v >> 24) & 0xFFu);
+            h *= 1099511628211ull;
+            return h;
         };
 
-        std::unordered_map<uint64_t, PerModelBatch> batchesByModel;
-        std::unordered_map<uint64_t, Engine::ModelHandle> handleByKey;
+        m_frameCounter += 1u;
 
         if (m_queryId == Engine::ECS::QueryManager::InvalidQuery)
             m_queryId = ecs.queries.createQuery(required(), excluded(), ecs.stores);
@@ -77,12 +82,13 @@ public:
                 continue;
             if (!store.hasPosePalette())
                 continue;
-            if (!store.hasPosition())
+            if (!store.hasRenderTransform())
                 continue;
 
             auto &renderModels = store.renderModels();
-            auto &positions = store.positions();
+            auto &renderTransforms = store.renderTransforms();
             auto &posePalettes = store.posePalettes();
+            auto &entities = store.entities();
             const uint32_t n = store.size();
 
             for (uint32_t row = 0; row < n; ++row)
@@ -94,13 +100,20 @@ public:
 
                 const uint64_t key = keyFromHandle(handle);
 
-                const auto &pos = positions[row];
-
-                handleByKey[key] = handle;
-
-                auto &batch = batchesByModel[key];
-                if (batch.nodeCount == 0)
+                auto &batch = m_batchesByModel[key];
+                if (batch.lastUsedFrame != m_frameCounter)
                 {
+                    batch.lastUsedFrame = m_frameCounter;
+                    batch.handle = handle;
+
+                    batch.contentHash = 1469598103934665603ull;
+                    batch.contentHash = fnv1aMixU32(batch.contentHash, static_cast<uint32_t>(handle.id));
+                    batch.contentHash = fnv1aMixU32(batch.contentHash, static_cast<uint32_t>(handle.generation));
+
+                    batch.instanceWorlds.clear();
+                    batch.nodePalette.clear();
+                    batch.jointPalette.clear();
+
                     // Prefer counts from PosePalette (it is what we will upload).
                     batch.nodeCount = posePalettes[row].nodeCount;
                     batch.jointCount = posePalettes[row].jointCount;
@@ -108,24 +121,21 @@ public:
                         batch.nodeCount = static_cast<uint32_t>(asset->nodes.size());
                     if (batch.jointCount == 0)
                         batch.jointCount = asset->totalJointCount;
-
-                    batch.nodePalette.reserve(64u * batch.nodeCount);
-                    if (batch.jointCount > 0)
-                        batch.jointPalette.reserve(64u * batch.jointCount);
                 }
 
                 if (batch.nodeCount == 0)
                     continue;
 
-                // World matrix
-                auto *facings = store.hasFacing() ? &store.facings() : nullptr;
-                glm::mat4 world = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, pos.y, pos.z));
+                // World matrix comes from RenderTransform (updated by RenderTransformUpdateSystem).
+                const glm::mat4 &world = renderTransforms[row].world;
 
-                if (facings)
-                {
-                    const float yaw = (*facings)[row].yaw;
-                    world = glm::rotate(world, yaw, glm::vec3(0.0f, 1.0f, 0.0f));
-                }
+                // Hash the semantic inputs that should affect rendering.
+                // This lets us skip re-uploading identical instance/palette data to the GPU.
+                const auto &e = entities[row];
+                batch.contentHash = fnv1aMixU32(batch.contentHash, e.index);
+                batch.contentHash = fnv1aMixU32(batch.contentHash, e.generation);
+                batch.contentHash = fnv1aMixU32(batch.contentHash, renderTransforms[row].transformVersion);
+                batch.contentHash = fnv1aMixU32(batch.contentHash, posePalettes[row].poseVersion);
 
                 batch.instanceWorlds.emplace_back(world);
 
@@ -153,54 +163,89 @@ public:
         }
 
         // Create/update passes for models that have instances this frame.
-        for (auto &kv : batchesByModel)
+        for (auto &kv : m_batchesByModel)
         {
             const uint64_t key = kv.first;
             auto &batch = kv.second;
+            if (batch.lastUsedFrame != m_frameCounter)
+                continue;
             auto &worlds = batch.instanceWorlds;
             if (worlds.empty())
                 continue;
 
-            const Engine::ModelHandle handle = handleByKey[key];
+            const Engine::ModelHandle handle = batch.handle;
 
             auto it = m_passes.find(key);
             if (it == m_passes.end())
             {
-                auto pass = std::make_shared<Engine::SModelRenderPassModule>();
-                pass->setAssets(m_assets);
-                pass->setModel(handle);
-                pass->setCamera(m_camera);
-                pass->setEnabled(true);
-                m_renderer->registerPass(pass);
-                it = m_passes.emplace(key, std::move(pass)).first;
+                PassEntry entry;
+                entry.pass = std::make_shared<Engine::SModelRenderPassModule>();
+                entry.pass->setAssets(m_assets);
+                entry.pass->setModel(handle);
+                entry.pass->setCamera(m_camera);
+                entry.pass->setEnabled(true);
+                m_renderer->registerPass(entry.pass);
+                it = m_passes.emplace(key, std::move(entry)).first;
             }
 
-            it->second->setCamera(m_camera);
-            it->second->setEnabled(true);
-            it->second->setInstances(worlds.data(), static_cast<uint32_t>(worlds.size()));
-            it->second->setNodePalette(batch.nodePalette.data(), static_cast<uint32_t>(worlds.size()), batch.nodeCount);
+            auto &entry = it->second;
+            entry.pass->setCamera(m_camera);
+            entry.pass->setEnabled(true);
 
-            if (batch.jointCount > 0 && batch.jointPalette.size() == worlds.size() * static_cast<size_t>(batch.jointCount))
+            // If nothing changed for this model batch, keep the previous GPU buffers.
+            if (entry.lastSubmittedHash != batch.contentHash)
             {
-                it->second->setJointPalette(batch.jointPalette.data(), static_cast<uint32_t>(worlds.size()), batch.jointCount);
+                entry.lastSubmittedHash = batch.contentHash;
+
+                entry.pass->setInstances(worlds.data(), static_cast<uint32_t>(worlds.size()));
+                entry.pass->setNodePalette(batch.nodePalette.data(), static_cast<uint32_t>(worlds.size()), batch.nodeCount);
+
+                if (batch.jointCount > 0 && batch.jointPalette.size() == worlds.size() * static_cast<size_t>(batch.jointCount))
+                {
+                    entry.pass->setJointPalette(batch.jointPalette.data(), static_cast<uint32_t>(worlds.size()), batch.jointCount);
+                }
             }
         }
 
         // Disable passes that have no instances this frame.
         for (auto &kv : m_passes)
         {
-            if (batchesByModel.find(kv.first) == batchesByModel.end())
+            const auto it = m_batchesByModel.find(kv.first);
+            if (it == m_batchesByModel.end() || it->second.lastUsedFrame != m_frameCounter)
             {
-                kv.second->setEnabled(false);
+                kv.second.pass->setEnabled(false);
             }
         }
     }
 
 private:
+    struct PerModelBatch
+    {
+        Engine::ModelHandle handle{};
+        uint32_t lastUsedFrame = 0;
+
+        uint64_t contentHash = 0;
+
+        std::vector<glm::mat4> instanceWorlds;
+        std::vector<glm::mat4> nodePalette; // flattened: [instance][node]
+        uint32_t nodeCount = 0;
+
+        std::vector<glm::mat4> jointPalette; // flattened: [instance][joint]
+        uint32_t jointCount = 0;
+    };
+
+    struct PassEntry
+    {
+        std::shared_ptr<Engine::SModelRenderPassModule> pass;
+        uint64_t lastSubmittedHash = 0;
+    };
+
     Engine::AssetManager *m_assets = nullptr; // not owned
     Engine::Renderer *m_renderer = nullptr;   // not owned
     Engine::Camera *m_camera = nullptr;       // not owned
 
-    std::unordered_map<uint64_t, std::shared_ptr<Engine::SModelRenderPassModule>> m_passes;
+    std::unordered_map<uint64_t, PassEntry> m_passes;
+    std::unordered_map<uint64_t, PerModelBatch> m_batchesByModel;
+    uint32_t m_frameCounter = 0;
     Engine::ECS::QueryId m_queryId = Engine::ECS::QueryManager::InvalidQuery;
 };

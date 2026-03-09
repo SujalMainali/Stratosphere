@@ -56,14 +56,26 @@ public:
                 continue;
 
             auto dirtyRows = ecs.queries.consumeDirtyRows(m_queryId, archetypeId);
-            if (dirtyRows.empty())
-                continue;
 
             const uint32_t n = store.size();
             auto &positions = const_cast<std::vector<Engine::ECS::Position> &>(store.positions());
             auto &transforms = const_cast<std::vector<Engine::ECS::RenderTransform> &>(store.renderTransforms());
             const bool hasFacing = store.hasFacing();
             auto &facings = hasFacing ? const_cast<std::vector<Engine::ECS::Facing> &>(store.facings()) : m_dummyFacings;
+
+            // Dirty-driven update is great once the system is running, but newly spawned entities may not have
+            // their Position/Facing dirtied yet. Ensure we compute the initial world matrix once.
+            if (dirtyRows.empty())
+            {
+                dirtyRows.reserve(n);
+                for (uint32_t row = 0; row < n; ++row)
+                {
+                    if (transforms[row].transformVersion == 0)
+                        dirtyRows.push_back(row);
+                }
+                if (dirtyRows.empty())
+                    continue;
+            }
 
             auto processRow = [&](uint32_t row)
             {

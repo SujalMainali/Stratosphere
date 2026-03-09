@@ -222,6 +222,14 @@ namespace Sample
                 m_movement.update(ecs, dtSeconds);
 #endif
 
+                // 9. Render transform cache (Position/Facing -> RenderTransform)
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+                runTraced(m_renderTransform.name(), [&]()
+                          { m_renderTransform.update(ecs, dtSeconds); });
+#else
+                m_renderTransform.update(ecs, dtSeconds);
+#endif
+
                 // 10. Animation selection (sample policy)
 #if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
                 runTraced(m_locomotionAnim.name(), [&]()
