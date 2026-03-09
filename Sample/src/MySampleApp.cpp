@@ -737,6 +737,12 @@ void MySampleApp::OnEvent(const std::string &name)
     std::string evt;
     iss >> evt;
 
+    if (evt == "F1Pressed")
+    {
+        TogglePerformanceMonitorOverlay();
+        return;
+    }
+
     if (evt == "MouseButtonLeftDown")
     {
         // Skip game input when ImGui is using the mouse (editor sliders, buttons, etc.)

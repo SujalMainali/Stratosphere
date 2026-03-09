@@ -60,6 +60,9 @@ namespace Engine
         // Safe to call at any time (typically from derived Application ctor).
         void SetPerformanceMonitorEnabled(bool enabled);
 
+        // Toggle performance overlay visibility (no-op if monitor disabled).
+        void TogglePerformanceMonitorOverlay();
+
     private:
         struct Impl;
         std::unique_ptr<Impl> m_Impl;

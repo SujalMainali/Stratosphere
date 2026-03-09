@@ -103,6 +103,13 @@ namespace Engine
         }
     }
 
+    void Application::TogglePerformanceMonitorOverlay()
+    {
+        if (!m_Impl || !m_Impl->perfMonitor)
+            return;
+        m_Impl->perfMonitor->toggle();
+    }
+
     void Application::Run()
     {
         auto lastFrameTime = std::chrono::steady_clock::now();

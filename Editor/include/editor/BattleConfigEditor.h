@@ -4,6 +4,7 @@
 #include "editor/GameWorldSpawner.h"
 
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <string>
 
 namespace Editor
@@ -26,7 +27,9 @@ namespace Editor
 
     private:
         void drawCombatSection();
+        void drawAnchorsSection();
         void drawSpawnGroupsSection();
+        void drawObstaclesSection();
         void drawControlButtons(Engine::ECS::ECSContext &ecs);
 
         void writeWorkingCopy(const std::string &outPath);
@@ -38,39 +41,21 @@ namespace Editor
         void resetGame(Engine::ECS::ECSContext &ecs);
         void clearAllEntities(Engine::ECS::ECSContext &ecs);
 
-        struct CombatConfig
-        {
-            float meleeRange = 2.0f;
-            float engageRange = 10.0f;
-            float damageMin = 12.0f;
-            float damageMax = 28.0f;
-            float deathRemoveDelay = 3.0f;
-            float maxHPPerUnit = 140.0f;
-            float missChance = 0.20f;
-            float critChance = 0.10f;
-            float critMultiplier = 2.0f;
-            float rageMaxBonus = 0.50f;
-            float cooldownJitter = 0.30f;
-            float staggerMax = 0.60f;
-        };
+        // Working copy of the loaded file (source-of-truth for all edits).
+        nlohmann::json m_doc;
+        nlohmann::json m_originalDoc;
 
-        CombatConfig m_combat;
-        CombatConfig m_originalCombat;
+        // Selection state for list-style editors.
+        std::string m_selectedAnchorKey;
+        int m_selectedSpawnGroupIndex = -1;
+        int m_selectedObstacleIndex = -1;
+        int m_selectedGapIndex = -1;
 
-        struct SpawnGroupParams
-        {
-            int count = 20;
-            float offsetX = 0.0f;
-            float offsetZ = 0.0f;
-            int columns = 5;
-            float spacing = 5.0f;
-            float jitter = 0.2f;
-        };
-
-        SpawnGroupParams m_teamA;
-        SpawnGroupParams m_originalTeamA;
-        SpawnGroupParams m_teamB;
-        SpawnGroupParams m_originalTeamB;
+        // UI buffers
+        char m_newAnchorName[64] = {0};
+        char m_renameAnchorName[64] = {0};
+        char m_newSpawnGroupId[64] = {0};
+        char m_newObstaclePrefab[64] = {0};
 
         bool m_visible = true;
         std::string m_battleConfigPath = "GameWorld.json";
