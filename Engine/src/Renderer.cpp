@@ -1,6 +1,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <cstring>
+#include <chrono>
 #include "Engine/Renderer.h"
 #include "Engine/VulkanContext.h"
 #include "Engine/SwapChain.h"
@@ -477,19 +478,95 @@ namespace Engine
         if (!m_initialized)
             return;
 
+        using Clock = std::chrono::high_resolution_clock;
+        auto msSince = [](Clock::time_point a, Clock::time_point b) -> float
+        {
+            return std::chrono::duration<float, std::milli>(b - a).count();
+        };
+
+        const auto frameStartCpu = Clock::now();
+        auto finalizeCpuTotals = [&]()
+        {
+            m_cpuTimings.drawFrameTotalMs = msSince(frameStartCpu, Clock::now());
+            const float accounted =
+                m_cpuTimings.waitFenceMs +
+                m_cpuTimings.acquireMs +
+                m_cpuTimings.cmdResetMs +
+                m_cpuTimings.cmdBeginMs +
+                m_cpuTimings.timestampResetMs +
+                m_cpuTimings.renderPassBeginMs +
+                m_cpuTimings.passesRecordMs +
+                m_cpuTimings.imguiRecordMs +
+                m_cpuTimings.renderPassEndMs +
+                m_cpuTimings.cmdEndMs +
+                m_cpuTimings.submitMs +
+                m_cpuTimings.queryResultsMs +
+                m_cpuTimings.presentMs;
+            m_cpuTimings.otherMs = m_cpuTimings.drawFrameTotalMs - accounted;
+        };
+
         FrameContext &frame = m_frames[m_currentFrame];
         frame.frameIndex = m_currentFrame;
 
+        // Clear per-pass timings each frame (reused storage).
+        if (m_passCpuTimings.size() != m_passes.size())
+        {
+            m_passCpuTimings.assign(m_passes.size(), PassCpuTiming{});
+        }
+        else
+        {
+            for (auto &pt : m_passCpuTimings)
+            {
+                pt.name = "";
+                pt.recordMs = 0.0f;
+            }
+        }
+
         // Wait for previous frame to finish
+        auto t0 = Clock::now();
         VkResult r = vkWaitForFences(m_device, 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
+        auto t1 = Clock::now();
+        m_cpuTimings.waitFenceMs = msSince(t0, t1);
         if (r != VK_SUCCESS)
         {
             fprintf(stderr, "vkWaitForFences failed: %d\n", r);
             // Recover strategy: mark device lost or try a soft return
+            finalizeCpuTotals();
             return;
         }
 
+        // Read GPU timestamp results for the *same frame slot* we just waited on.
+        // This is the frame slot we are about to reuse, so its previous submission is guaranteed complete.
+        // (Avoid reading a different slot which may still be in-flight and cause a stall.)
+        if (m_timestampsSupported && m_timestampQueryPool != VK_NULL_HANDLE)
+        {
+            const auto queryT0 = Clock::now();
+
+            const uint32_t completedStartQuery = m_currentFrame * 2;
+            uint64_t timestamps[2] = {0, 0};
+            VkResult queryResult = vkGetQueryPoolResults(
+                m_device,
+                m_timestampQueryPool,
+                completedStartQuery,
+                2,
+                sizeof(timestamps),
+                timestamps,
+                sizeof(uint64_t),
+                VK_QUERY_RESULT_64_BIT);
+
+            if (queryResult == VK_SUCCESS && timestamps[1] > timestamps[0])
+            {
+                const uint64_t ticksDelta = timestamps[1] - timestamps[0];
+                const float nanoseconds = static_cast<float>(ticksDelta) * m_timestampPeriod;
+                m_gpuTimeMs = nanoseconds / 1000000.0f;
+            }
+
+            const auto queryT1 = Clock::now();
+            m_cpuTimings.queryResultsMs = msSince(queryT0, queryT1);
+        }
+
         // Acquire next image
+        t0 = Clock::now();
         uint32_t imageIndex = 0;
         VkResult acquireRes = vkAcquireNextImageKHR(
             m_device,
@@ -498,6 +575,8 @@ namespace Engine
             frame.imageAcquiredSemaphore,
             VK_NULL_HANDLE,
             &imageIndex);
+        t1 = Clock::now();
+        m_cpuTimings.acquireMs = msSince(t0, t1);
 
         if (acquireRes == VK_ERROR_OUT_OF_DATE_KHR)
         {
@@ -505,21 +584,31 @@ namespace Engine
             m_swapchain->Recreate(m_extent);
             // Framebuffers/renderpass depend on swapchain.
             recreateSwapchainDependent();
+            finalizeCpuTotals();
             return; // IMPORTANT: we did NOT reset the fence, so next frame’s wait will pass.
         }
         if (acquireRes != VK_SUCCESS && acquireRes != VK_SUBOPTIMAL_KHR)
         {
             fprintf(stderr, "vkAcquireNextImageKHR failed: %d\n", acquireRes);
+            finalizeCpuTotals();
             return; // Do not reset the fence on failure paths
         }
 
         // Record command buffer
+        t0 = Clock::now();
         vkResetCommandBuffer(frame.commandBuffer, 0);
+        t1 = Clock::now();
+        m_cpuTimings.cmdResetMs = msSince(t0, t1);
 
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        t0 = Clock::now();
         vkBeginCommandBuffer(frame.commandBuffer, &beginInfo);
+        t1 = Clock::now();
+        m_cpuTimings.cmdBeginMs = msSince(t0, t1);
+
+        t0 = Clock::now();
 
         // GPU timestamp: reset queries for this frame
         const uint32_t startQuery = m_currentFrame * 2;
@@ -530,6 +619,8 @@ namespace Engine
             // Write start timestamp (at top of pipe for earliest possible time)
             vkCmdWriteTimestamp(frame.commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_timestampQueryPool, startQuery);
         }
+        t1 = Clock::now();
+        m_cpuTimings.timestampResetMs = msSince(t0, t1);
 
         // Begin render pass
         VkClearValue clears[2]{};
@@ -545,22 +636,42 @@ namespace Engine
         rpBegin.clearValueCount = 2;
         rpBegin.pClearValues = clears;
 
+        t0 = Clock::now();
         vkCmdBeginRenderPass(frame.commandBuffer, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
+        t1 = Clock::now();
+        m_cpuTimings.renderPassBeginMs = msSince(t0, t1);
 
         // Let modules record draw commands
-        for (auto &p : m_passes)
+        t0 = Clock::now();
+        for (size_t i = 0; i < m_passes.size(); ++i)
         {
-            if (p)
-                p->record(frame, frame.commandBuffer);
+            auto &p = m_passes[i];
+            if (!p)
+                continue;
+
+            const auto passT0 = Clock::now();
+            p->record(frame, frame.commandBuffer);
+            const auto passT1 = Clock::now();
+
+            m_passCpuTimings[i].name = p->getDebugName();
+            m_passCpuTimings[i].recordMs = msSince(passT0, passT1);
         }
+        t1 = Clock::now();
+        m_cpuTimings.passesRecordMs = msSince(t0, t1);
 
         // Render ImGui if callback is set
+        t0 = Clock::now();
         if (m_imguiRenderCallback)
         {
             m_imguiRenderCallback(frame.commandBuffer);
         }
+        t1 = Clock::now();
+        m_cpuTimings.imguiRecordMs = msSince(t0, t1);
 
+        t0 = Clock::now();
         vkCmdEndRenderPass(frame.commandBuffer);
+        t1 = Clock::now();
+        m_cpuTimings.renderPassEndMs = msSince(t0, t1);
 
         // GPU timestamp: write end timestamp (at bottom of pipe for latest possible time)
         if (m_timestampsSupported && m_timestampQueryPool != VK_NULL_HANDLE)
@@ -568,9 +679,24 @@ namespace Engine
             vkCmdWriteTimestamp(frame.commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_timestampQueryPool, endQuery);
         }
 
+        t0 = Clock::now();
         vkEndCommandBuffer(frame.commandBuffer);
+        t1 = Clock::now();
+        m_cpuTimings.cmdEndMs = msSince(t0, t1);
+
+        // Full record bucket (for backwards-compatible display)
+        m_cpuTimings.recordMs =
+            m_cpuTimings.cmdResetMs +
+            m_cpuTimings.cmdBeginMs +
+            m_cpuTimings.timestampResetMs +
+            m_cpuTimings.renderPassBeginMs +
+            m_cpuTimings.passesRecordMs +
+            m_cpuTimings.imguiRecordMs +
+            m_cpuTimings.renderPassEndMs +
+            m_cpuTimings.cmdEndMs;
 
         // Submit to graphics queue
+        t0 = Clock::now();
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT};
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -584,37 +710,11 @@ namespace Engine
 
         vkResetFences(m_device, 1, &frame.inFlightFence);
         vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, frame.inFlightFence);
-
-        // Read GPU timestamp results from the PREVIOUS frame (which has definitely completed due to fence wait above)
-        // We read from the previous frame's queries since the current frame hasn't finished yet
-        if (m_timestampsSupported && m_timestampQueryPool != VK_NULL_HANDLE && m_maxFrames > 1)
-        {
-            // Calculate the previous frame's query indices
-            const uint32_t prevFrame = (m_currentFrame + m_maxFrames - 1) % m_maxFrames;
-            const uint32_t prevStartQuery = prevFrame * 2;
-            uint64_t timestamps[2] = {0, 0};
-
-            VkResult queryResult = vkGetQueryPoolResults(
-                m_device,
-                m_timestampQueryPool,
-                prevStartQuery,
-                2, // Query count
-                sizeof(timestamps),
-                timestamps,
-                sizeof(uint64_t),
-                VK_QUERY_RESULT_64_BIT);
-
-            if (queryResult == VK_SUCCESS && timestamps[1] > timestamps[0])
-            {
-                // Calculate GPU time in milliseconds
-                // timestampPeriod is in nanoseconds per tick
-                const uint64_t ticksDelta = timestamps[1] - timestamps[0];
-                const float nanoseconds = static_cast<float>(ticksDelta) * m_timestampPeriod;
-                m_gpuTimeMs = nanoseconds / 1000000.0f; // Convert ns to ms
-            }
-        }
+        t1 = Clock::now();
+        m_cpuTimings.submitMs = msSince(t0, t1);
 
         // Present
+        t0 = Clock::now();
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
@@ -625,6 +725,10 @@ namespace Engine
         presentInfo.pImageIndices = &imageIndex;
 
         vkQueuePresentKHR(m_presentQueue, &presentInfo);
+        t1 = Clock::now();
+        m_cpuTimings.presentMs = msSince(t0, t1);
+
+        finalizeCpuTotals();
         // Advance frame index
         m_currentFrame = (m_currentFrame + 1) % m_maxFrames;
     }

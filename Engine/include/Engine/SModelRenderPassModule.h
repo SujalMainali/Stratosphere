@@ -19,6 +19,8 @@ namespace Engine
         SModelRenderPassModule() = default;
         ~SModelRenderPassModule() override;
 
+        const char *getDebugName() const override { return "SModel"; }
+
         void setEnabled(bool en) { m_enabled = en; }
 
         void setAssets(AssetManager *assets)

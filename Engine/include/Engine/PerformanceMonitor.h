@@ -30,6 +30,16 @@ namespace Engine
     class PerformanceMonitor
     {
     public:
+        struct MainLoopTimings
+        {
+            float pollEventsMs = 0.0f;
+            float imguiBeginMs = 0.0f;
+            float appUpdateMs = 0.0f;
+            float appRenderMs = 0.0f;
+            float imguiEndMs = 0.0f;
+            float drawFrameTotalMs = 0.0f;
+        };
+
         PerformanceMonitor();
         ~PerformanceMonitor();
 
@@ -93,6 +103,10 @@ namespace Engine
          * @brief Render the ImGui overlay. Call during UI rendering phase.
          */
         void renderOverlay();
+
+        // Optional: main-loop stage timing breakdown (set by Application).
+        void setMainLoopTimings(const MainLoopTimings &timings) { m_mainLoopTimings = timings; }
+        const MainLoopTimings &getMainLoopTimings() const { return m_mainLoopTimings; }
 
         // Getters for current metrics
         float getAverageFPS() const { return m_avgFPS; }
@@ -198,6 +212,8 @@ namespace Engine
         std::vector<std::string> m_ecsSystemDisplayOrder;
         std::unordered_map<std::string, size_t> m_ecsSystemDisplayIndex;
 #endif
+
+        MainLoopTimings m_mainLoopTimings{};
     };
 
     /**

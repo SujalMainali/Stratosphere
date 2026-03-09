@@ -587,6 +587,57 @@ namespace Engine
                 ImGui::TextDisabled("  GPU:   N/A");
             }
 
+            if (m_renderer)
+            {
+                // Extra per-stage CPU instrumentation (debug only)
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+                const auto &t = m_renderer->getCpuFrameTimings();
+                ImGui::Text("  DrawFrame CPU:");
+                ImGui::Text("    WaitFence: %.2f ms", t.waitFenceMs);
+                ImGui::Text("    Acquire:   %.2f ms", t.acquireMs);
+                ImGui::Text("    Record:    %.2f ms", t.recordMs);
+                ImGui::Text("      CmdReset:   %.2f ms", t.cmdResetMs);
+                ImGui::Text("      CmdBegin:   %.2f ms", t.cmdBeginMs);
+                ImGui::Text("      Timestamps: %.2f ms", t.timestampResetMs);
+                ImGui::Text("      RP Begin:   %.2f ms", t.renderPassBeginMs);
+                ImGui::Text("      Passes:     %.2f ms", t.passesRecordMs);
+                ImGui::Text("      ImGui:      %.2f ms", t.imguiRecordMs);
+                ImGui::Text("      RP End:     %.2f ms", t.renderPassEndMs);
+                ImGui::Text("      CmdEnd:     %.2f ms", t.cmdEndMs);
+                ImGui::Text("    Submit:    %.2f ms", t.submitMs);
+                ImGui::Text("    QueryRes:  %.2f ms", t.queryResultsMs);
+                ImGui::Text("    Present:   %.2f ms", t.presentMs);
+                ImGui::Text("    Total:     %.2f ms", t.drawFrameTotalMs);
+                ImGui::Text("    Other:     %.2f ms", t.otherMs);
+
+                const auto &passTimings = m_renderer->getCpuPassTimings();
+                if (!passTimings.empty())
+                {
+                    ImGui::Text("    Per-pass:");
+                    for (const auto &pt : passTimings)
+                    {
+                        if (pt.recordMs <= 0.0f)
+                            continue;
+                        ImGui::Text("      %s: %.2f ms", (pt.name && pt.name[0]) ? pt.name : "(unnamed)", pt.recordMs);
+                    }
+                }
+
+                {
+                    const auto &m = m_mainLoopTimings;
+                    const float accountedMs = m.pollEventsMs + m.imguiBeginMs + m.appUpdateMs + m.appRenderMs + m.imguiEndMs + m.drawFrameTotalMs;
+                    ImGui::Text("  Main Loop (last frame):");
+                    ImGui::Text("    PollEvents: %.2f ms", m.pollEventsMs);
+                    ImGui::Text("    ImGuiBegin: %.2f ms", m.imguiBeginMs);
+                    ImGui::Text("    AppUpdate:  %.2f ms", m.appUpdateMs);
+                    ImGui::Text("    AppRender:  %.2f ms", m.appRenderMs);
+                    ImGui::Text("    ImGuiEnd:   %.2f ms", m.imguiEndMs);
+                    ImGui::Text("    DrawFrame:  %.2f ms", m.drawFrameTotalMs);
+                    ImGui::Text("    Accounted:  %.2f ms", accountedMs);
+                    ImGui::Text("    CPU (raw):  %.2f ms", m_cpuTimeMs);
+                }
+#endif
+            }
+
             ImGui::Spacing();
 
             // --- VRAM Section ---
