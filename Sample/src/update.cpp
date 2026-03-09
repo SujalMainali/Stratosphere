@@ -112,10 +112,13 @@ namespace Sample
         m_command.SetGlobalMoveTarget(x, y, z);
     }
 
-    void SystemRunner::ResetForRestart()
+    void SystemRunner::ResetForRestart(Engine::ECS::ECSContext &ecs)
     {
         // Reset the initialized flag so Initialize() re-builds masks and queries.
         m_initialized = false;
+
+        // Discard all compiled queries so systems recreate them on next buildMasks/update.
+        ecs.queries.clear();
 
         // Clear combat state (death queues, battle flags, unit memories).
         m_combat.resetBattleState();

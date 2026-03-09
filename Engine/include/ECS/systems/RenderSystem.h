@@ -31,6 +31,12 @@ public:
     const char *name() const override { return "RenderModelSystem"; }
     void setAssetManager(Engine::AssetManager *assets) { m_assets = assets; }
 
+    void buildMasks(Engine::ECS::ComponentRegistry &registry) override
+    {
+        Engine::ECS::SystemBase::buildMasks(registry);
+        m_queryId = Engine::ECS::QueryManager::InvalidQuery;
+    }
+
     void setRenderer(Engine::Renderer *renderer) { m_renderer = renderer; }
     void setCamera(Engine::Camera *camera) { m_camera = camera; }
 

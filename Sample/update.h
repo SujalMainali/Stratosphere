@@ -44,7 +44,7 @@ namespace Sample
         CombatSystem &GetCombatSystemMut() { return m_combat; }
 
         /// Reset all systems for a clean restart (clears cached queries, battle state, etc.)
-        void ResetForRestart();
+        void ResetForRestart(Engine::ECS::ECSContext &ecs);
 
     private:
         bool m_initialized = false;

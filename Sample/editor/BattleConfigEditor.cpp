@@ -6,6 +6,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <filesystem>
 
 using json = nlohmann::json;
 
@@ -20,6 +21,14 @@ BattleConfigEditor::BattleConfigEditor() = default;
 void BattleConfigEditor::loadFromFile(const std::string &path)
 {
     m_battleConfigPath = path;
+
+    // Derive live config path (e.g. BattleConfig.json -> BattleConfig_live.json)
+    {
+        std::filesystem::path p(path);
+        auto stem = p.stem().string();
+        auto ext  = p.extension().string();
+        m_liveConfigPath = (p.parent_path() / (stem + "_live" + ext)).string();
+    }
 
     std::ifstream file(path);
     if (!file.is_open())
@@ -98,6 +107,10 @@ void BattleConfigEditor::loadFromFile(const std::string &path)
 
     m_statusMsg = "Loaded " + path;
     m_statusTimer = 2.0f;
+
+    // Snapshot the file's last-write-time for the file watcher.
+    try { m_lastWriteTime = std::filesystem::last_write_time(m_battleConfigPath); }
+    catch (...) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -105,8 +118,6 @@ void BattleConfigEditor::loadFromFile(const std::string &path)
 // ---------------------------------------------------------------------------
 void BattleConfigEditor::loadUnitConfig(const std::string &path)
 {
-    m_unitConfigPath = path;
-
     std::ifstream file(path);
     if (!file.is_open())
         return;
@@ -143,6 +154,26 @@ void BattleConfigEditor::loadUnitConfig(const std::string &path)
 // ---------------------------------------------------------------------------
 void BattleConfigEditor::draw(Engine::ECS::ECSContext &ecs, SystemRunner &systems)
 {
+    // --- File-watcher: poll for external edits to BattleConfig.json ---
+    {
+        float dt = ImGui::GetIO().DeltaTime;
+        m_watchPollTimer += dt;
+        if (m_watchPollTimer >= kWatchPollInterval)
+        {
+            m_watchPollTimer = 0.0f;
+            try
+            {
+                auto t = std::filesystem::last_write_time(m_battleConfigPath);
+                if (t != m_lastWriteTime)
+                {
+                    m_lastWriteTime = t;
+                    reloadFromDisk(ecs, systems);
+                }
+            }
+            catch (...) {}
+        }
+    }
+
     if (!m_visible)
         return;
 
@@ -261,10 +292,11 @@ void BattleConfigEditor::drawSpawnGroupsSection()
 }
 
 // ---------------------------------------------------------------------------
-// Save spawn group edits back to BattleConfig.json
+// Write ALL editor values to a live working-copy JSON (never touches originals)
 // ---------------------------------------------------------------------------
-void BattleConfigEditor::saveSpawnGroupsToFile()
+void BattleConfigEditor::writeLiveConfig()
 {
+    // Read the original BattleConfig.json as a read-only template.
     std::ifstream inFile(m_battleConfigPath);
     if (!inFile.is_open()) return;
 
@@ -273,27 +305,43 @@ void BattleConfigEditor::saveSpawnGroupsToFile()
     catch (...) { return; }
     inFile.close();
 
-    if (!root.contains("spawnGroups") || !root["spawnGroups"].is_array())
-        return;
+    // --- Patch combat tuning ---
+    root["combat"]["meleeRange"]       = m_combat.meleeRange;
+    root["combat"]["engageRange"]      = m_combat.engageRange;
+    root["combat"]["damageMin"]        = m_combat.damageMin;
+    root["combat"]["damageMax"]        = m_combat.damageMax;
+    root["combat"]["deathRemoveDelay"] = m_combat.deathRemoveDelay;
+    root["combat"]["maxHPPerUnit"]     = m_combat.maxHPPerUnit;
+    root["combat"]["missChance"]       = m_combat.missChance;
+    root["combat"]["critChance"]       = m_combat.critChance;
+    root["combat"]["critMultiplier"]   = m_combat.critMultiplier;
+    root["combat"]["rageMaxBonus"]     = m_combat.rageMaxBonus;
+    root["combat"]["cooldownJitter"]   = m_combat.cooldownJitter;
+    root["combat"]["staggerMax"]       = m_combat.staggerMax;
 
-    for (auto &sg : root["spawnGroups"])
+    // --- Patch spawn groups ---
+    if (root.contains("spawnGroups") && root["spawnGroups"].is_array())
     {
-        std::string id = sg.value("id", std::string(""));
-        const SpawnGroupParams *p = nullptr;
-        if (id == "team_a") p = &m_teamA;
-        else if (id == "team_b") p = &m_teamB;
-        else continue;
+        for (auto &sg : root["spawnGroups"])
+        {
+            std::string id = sg.value("id", std::string(""));
+            const SpawnGroupParams *p = nullptr;
+            if (id == "team_a") p = &m_teamA;
+            else if (id == "team_b") p = &m_teamB;
+            else continue;
 
-        sg["count"] = p->count;
-        sg["offset"]["x"] = p->offsetX;
-        sg["offset"]["z"] = p->offsetZ;
-        if (!sg.contains("formation")) sg["formation"] = json::object();
-        sg["formation"]["columns"]   = p->columns;
-        sg["formation"]["spacing_m"] = p->spacing;
-        sg["formation"]["jitter_m"]  = p->jitter;
+            sg["count"] = p->count;
+            sg["offset"]["x"] = p->offsetX;
+            sg["offset"]["z"] = p->offsetZ;
+            if (!sg.contains("formation")) sg["formation"] = json::object();
+            sg["formation"]["columns"]   = p->columns;
+            sg["formation"]["spacing_m"] = p->spacing;
+            sg["formation"]["jitter_m"]  = p->jitter;
+        }
     }
 
-    std::ofstream outFile(m_battleConfigPath);
+    // Write to the live working copy — original BattleConfig.json is never modified.
+    std::ofstream outFile(m_liveConfigPath);
     if (outFile.is_open())
         outFile << root.dump(4) << std::endl;
 }
@@ -305,20 +353,12 @@ void BattleConfigEditor::drawControlButtons(Engine::ECS::ECSContext &ecs, System
 {
     if (ImGui::Button("Apply Changes"))
     {
-        applyToSystems(systems);
-        applyUnitParamsToEntities(ecs);
-        m_statusMsg = "Changes applied (live)";
-        m_statusTimer = 2.0f;
+        respawn(ecs, systems);
+        m_statusMsg = "Changes applied (respawned)";
+        m_statusTimer = 3.0f;
     }
 
     ImGui::SameLine();
-
-    if (ImGui::Button("Respawn"))
-    {
-        respawn(ecs, systems);
-        m_statusMsg = "Respawned with current config";
-        m_statusTimer = 3.0f;
-    }
 
     if (ImGui::Button("Reset Game"))
     {
@@ -386,18 +426,18 @@ void BattleConfigEditor::applyUnitParamsToEntities(Engine::ECS::ECSContext &ecs)
 // ---------------------------------------------------------------------------
 void BattleConfigEditor::respawn(Engine::ECS::ECSContext &ecs, SystemRunner &systems)
 {
-    // Write current spawn group params so the spawner reads the new counts.
-    saveSpawnGroupsToFile();
+    // Write current editor values to the live working copy.
+    writeLiveConfig();
 
     // Clear all entities safely.
     clearAllEntities(ecs);
 
     // Reset systems so they re-initialize queries.
-    systems.ResetForRestart();
+    systems.ResetForRestart(ecs);
     systems.Initialize(ecs);
 
-    // Re-spawn from the scenario file with current editor values.
-    SpawnFromScenarioFile(ecs, m_battleConfigPath, false);
+    // Re-spawn from the live config (original files are never touched).
+    SpawnFromScenarioFile(ecs, m_liveConfigPath, false);
 
     // Push current editor configs to running systems & entities.
     applyToSystems(systems);
@@ -416,24 +456,24 @@ void BattleConfigEditor::resetGame(Engine::ECS::ECSContext &ecs, SystemRunner &s
     m_teamA  = m_originalTeamA;
     m_teamB  = m_originalTeamB;
 
-    // Write current spawn group params so the spawner reads them.
-    saveSpawnGroupsToFile();
+    // Respawn with restored values.
+    respawn(ecs, systems);
+}
 
-    // Clear all entities safely.
-    clearAllEntities(ecs);
+// ---------------------------------------------------------------------------
+// File-watcher callback: reload the original BattleConfig.json from disk,
+// update all editor sliders, and respawn.
+// ---------------------------------------------------------------------------
+void BattleConfigEditor::reloadFromDisk(Engine::ECS::ECSContext &ecs, SystemRunner &systems)
+{
+    // Re-parse from the original file (user edited it externally).
+    loadFromFile(m_battleConfigPath);
 
-    // Reset systems so they re-initialize queries.
-    systems.ResetForRestart();
-    systems.Initialize(ecs);
+    // Respawn with the freshly-loaded values.
+    respawn(ecs, systems);
 
-    // Re-spawn from the original scenario file.
-    SpawnFromScenarioFile(ecs, m_battleConfigPath, false);
-
-    // Push original configs to running systems.
-    applyToSystems(systems);
-    applyUnitParamsToEntities(ecs);
-
-    systems.GetCombatSystemMut().setHumanTeam(0);
+    m_statusMsg = "Auto-reloaded from disk";
+    m_statusTimer = 3.0f;
 }
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,8 @@
 #include "ScenarioSpawner.h"
 
 #include <string>
+#include <filesystem>
+#include <chrono>
 
 namespace Sample
 {
@@ -29,14 +31,13 @@ namespace Sample
         void toggleVisible() { m_visible = !m_visible; }
         bool isVisible() const { return m_visible; }
 
-        const CombatSystem::CombatConfig &combatConfig() const { return m_combat; }
-
     private:
         void drawCombatSection();
         void drawSpawnGroupsSection();
         void drawControlButtons(Engine::ECS::ECSContext &ecs, SystemRunner &systems);
 
-        void saveSpawnGroupsToFile();
+        void writeLiveConfig();
+        void reloadFromDisk(Engine::ECS::ECSContext &ecs, SystemRunner &systems);
 
         void applyToSystems(SystemRunner &systems);
         void applyUnitParamsToEntities(Engine::ECS::ECSContext &ecs);
@@ -76,9 +77,14 @@ namespace Sample
         // --- State ---
         bool m_visible = true;
         std::string m_battleConfigPath = "BattleConfig.json";
-        std::string m_unitConfigPath   = "entities/CombatKnight.json";
+        std::string m_liveConfigPath;
 
         std::string m_statusMsg;
         float m_statusTimer = 0.0f;
+
+        // File-watcher state (polling-based)
+        std::filesystem::file_time_type m_lastWriteTime{};
+        float m_watchPollTimer = 0.0f;
+        static constexpr float kWatchPollInterval = 0.5f; // seconds
     };
 }

@@ -29,6 +29,7 @@ public:
         Engine::ECS::SystemBase::buildMasks(registry);
         m_positionId = registry.ensureId("Position");
         m_velocityId = registry.ensureId("Velocity");
+        m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     }
 
     void update(Engine::ECS::ECSContext &ecs, float dt) override
