@@ -31,6 +31,43 @@
 
 using json = nlohmann::json;
 
+// -----------------------------------------------------------------------------
+// TUNABLES (ALL_CAPS)
+// -----------------------------------------------------------------------------
+namespace SampleTuning
+{
+    // Cursor picking: screen-space radius to consider a unit under the cursor.
+    static constexpr float SELECTION_PICK_RADIUS_PX = 30.0f;
+
+    // Selection: local cluster (connected component) radius.
+    static constexpr float SELECTION_LINK_RADIUS_M = 14.0f;
+    static constexpr uint32_t SELECTION_MAX_UNITS = 2048;
+
+    // Enemy-click behavior: if nothing is selected, pick a friendly seed near the enemy.
+    static constexpr float ENEMY_CLICK_SEED_SEARCH_RADIUS_M = 80.0f;
+
+    // HUD grouping: cluster by (team + proximity) using spatial index.
+    static constexpr float HUD_GROUP_LINK_RADIUS_M = 20.0f;
+
+    // HUD: bar dimensions in pixels.
+    static constexpr float HUD_BAR_WIDTH_PX = 70.0f;
+    static constexpr float HUD_BAR_HEIGHT_PX = 7.0f;
+    static constexpr float HUD_BAR_CORNER_ROUNDING_PX = 3.0f;
+    static constexpr float HUD_BAR_BORDER_THICKNESS_PX = 1.0f;
+    static constexpr float HUD_TEXT_OFFSET_Y_PX = 30.0f;
+
+    // HUD: world-space height above group centroid.
+    static constexpr float HUD_WORLD_HEIGHT_OFFSET_M = 10.0f;
+
+    // HUD: colors (RGBA). Kept as constants so opacity is easy to tweak.
+    static constexpr ImU32 HUD_TEAM0_FILL = IM_COL32(50, 120, 220, 170);
+    static constexpr ImU32 HUD_TEAM1_FILL = IM_COL32(200, 50, 50, 170);
+    static constexpr ImU32 HUD_TEAM0_BG = IM_COL32(20, 40, 80, 90);
+    static constexpr ImU32 HUD_TEAM1_BG = IM_COL32(80, 20, 20, 90);
+    static constexpr ImU32 HUD_BORDER = IM_COL32(220, 220, 220, 90);
+    static constexpr ImU32 HUD_TEXT = IM_COL32(235, 235, 235, 190);
+}
+
 MySampleApp::MySampleApp() : Engine::Application()
 {
     m_assets = std::make_unique<Engine::AssetManager>(
@@ -229,8 +266,7 @@ void MySampleApp::PickAndSelectEntityAtCursor()
     const glm::mat4 proj = m_camera.GetProjectionMatrix();
     const glm::mat4 vp = proj * view;
 
-    constexpr float kPickRadiusPx = 50.0f;
-    const float bestRadius2 = kPickRadiusPx * kPickRadiusPx;
+    const float bestRadius2 = SampleTuning::SELECTION_PICK_RADIUS_PX * SampleTuning::SELECTION_PICK_RADIUS_PX;
     float bestD2 = bestRadius2;
     float bestCamD2 = std::numeric_limits<float>::infinity();
 
@@ -339,9 +375,8 @@ void MySampleApp::PickAndSelectEntityAtCursor()
 
             // Flood-fill (connected component) selection: starting from the seed,
             // keep adding same-team units that are within a link radius of any selected unit.
-            constexpr float kLinkRadiusM = 14.0f;
-            const float linkR2 = kLinkRadiusM * kLinkRadiusM;
-            constexpr uint32_t kMaxSelect = 2048;
+            const float linkR2 = SampleTuning::SELECTION_LINK_RADIUS_M * SampleTuning::SELECTION_LINK_RADIUS_M;
+            constexpr uint32_t kMaxSelect = SampleTuning::SELECTION_MAX_UNITS;
 
             auto entityKey = [](const Engine::ECS::Entity &e) -> uint64_t
             {
@@ -385,7 +420,7 @@ void MySampleApp::PickAndSelectEntityAtCursor()
                 const float cx = st->positions()[rec->row].x;
                 const float cz = st->positions()[rec->row].z;
 
-                spatial.forNeighborsInRadius(cx, cz, kLinkRadiusM, [&](uint32_t nStoreId, uint32_t nRow)
+                spatial.forNeighborsInRadius(cx, cz, SampleTuning::SELECTION_LINK_RADIUS_M, [&](uint32_t nStoreId, uint32_t nRow)
                                              {
                                                  auto *ns = ecs.stores.get(nStoreId);
                                                  if (!ns)
@@ -409,8 +444,7 @@ void MySampleApp::PickAndSelectEntityAtCursor()
                                                  const Engine::ECS::Entity cand = ns->entities()[nRow];
                                                  const uint64_t k = entityKey(cand);
                                                  if (visited.insert(k).second)
-                                                     queue.push_back(cand);
-                                             });
+                                                     queue.push_back(cand); });
             }
 
             for (const auto &e : selected)
@@ -434,12 +468,11 @@ void MySampleApp::PickAndSelectEntityAtCursor()
                 Engine::ECS::Entity bestSeed{};
                 float bestD2 = std::numeric_limits<float>::infinity();
 
-                constexpr float kSeedSearchRadiusM = 80.0f;
                 const float sx = pickedPos.x;
                 const float sz = pickedPos.z;
 
                 const auto &spatial = m_systems.GetSpatialIndex();
-                spatial.forNeighborsInRadius(sx, sz, kSeedSearchRadiusM, [&](uint32_t nStoreId, uint32_t nRow)
+                spatial.forNeighborsInRadius(sx, sz, SampleTuning::ENEMY_CLICK_SEED_SEARCH_RADIUS_M, [&](uint32_t nStoreId, uint32_t nRow)
                                              {
                                                  auto *ns = ecs.stores.get(nStoreId);
                                                  if (!ns)
@@ -462,8 +495,7 @@ void MySampleApp::PickAndSelectEntityAtCursor()
                                                  {
                                                      bestD2 = d2;
                                                      bestSeed = ns->entities()[nRow];
-                                                 }
-                                             });
+                                                 } });
 
                 if (bestSeed.valid())
                     selectLocalClusterForTeam(teamToSelect, bestSeed);
@@ -552,161 +584,214 @@ void MySampleApp::OnRender()
     if (!layer || !layer->isInitialized() || ImGui::GetCurrentContext() == nullptr)
         return;
 
-    // ---- Battle HUD: Team health bars ----
-    if (m_inGame)
+    // ---- Group HUD: per-local-group health bars above units ----
+    if (!m_inGame)
+        return;
+
+    ImGuiIO &io = ImGui::GetIO();
+
+    // Transparent overlay window covering full screen
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(io.DisplaySize);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::Begin("##GroupHUD", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                     ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground |
+                     ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
+
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+
+    auto &ecs = GetECS();
+    const uint32_t disabledId = ecs.components.ensureId("Disabled");
+    const uint32_t deadId = ecs.components.ensureId("Dead");
+
+    // Grouping: cluster by (team + proximity) using spatial index.
+    // This matches the selection logic and supports multiple groups per team.
+    const float linkR2 = SampleTuning::HUD_GROUP_LINK_RADIUS_M * SampleTuning::HUD_GROUP_LINK_RADIUS_M;
+
+    const float maxHPPerUnit = std::max(1.0f, m_systems.GetCombatSystem().config().maxHPPerUnit);
+
+    auto entityKey = [](const Engine::ECS::Entity &e) -> uint64_t
     {
-        const auto &combat = m_systems.GetCombatSystem();
-        const auto &teamA = combat.getTeamStats(0);
-        const auto &teamB = combat.getTeamStats(1);
+        return (static_cast<uint64_t>(e.generation) << 32) | static_cast<uint64_t>(e.index);
+    };
 
-        ImGuiIO &io = ImGui::GetIO();
-        const float screenW = io.DisplaySize.x;
+    struct GroupStats
+    {
+        uint8_t team = 0;
+        int alive = 0;
+        float totalHP = 0.0f;
+        glm::vec3 centroid{0.0f};
+    };
 
-        // Bar dimensions
-        const float barW = 280.0f;
-        const float barH = 28.0f;
-        const float padding = 20.0f;
-        const float topY = 16.0f;
+    std::vector<GroupStats> groups;
+    groups.reserve(64);
 
-        // Transparent overlay window covering full screen
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(io.DisplaySize);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::Begin("##BattleHUD", nullptr,
-                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                         ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground |
-                         ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
-        ImGui::PopStyleVar(2);
-        ImGui::PopStyleColor();
+    std::unordered_set<uint64_t> visited;
+    visited.reserve(2048);
 
-        ImDrawList *draw = ImGui::GetWindowDrawList();
+    const auto &spatial = m_systems.GetSpatialIndex();
 
-        // Helper lambda: draw a labeled health bar
-        auto drawTeamBar = [&](float x, float y, const CombatSystem::TeamStats &stats,
-                               const char *label, ImU32 fillColor, ImU32 bgColor)
+    // Enumerate all living units that have Team+Health+Position.
+    for (const auto &ptr : ecs.stores.stores())
+    {
+        if (!ptr)
+            continue;
+
+        const auto &store = *ptr;
+        if (!store.hasPosition() || !store.hasHealth() || !store.hasTeam())
+            continue;
+        if (store.signature().has(disabledId) || store.signature().has(deadId))
+            continue;
+
+        const auto &ents = store.entities();
+        const auto &pos = store.positions();
+        const auto &hp = store.healths();
+        const auto &teams = store.teams();
+        const uint32_t n = store.size();
+
+        for (uint32_t row = 0; row < n; ++row)
         {
-            float fraction = (stats.maxHP > 0.0f)
-                                 ? std::clamp(stats.currentHP / stats.maxHP, 0.0f, 1.0f)
-                                 : 0.0f;
+            if (hp[row].value <= 0.0f)
+                continue;
 
-            // Background (dark)
-            draw->AddRectFilled(ImVec2(x, y), ImVec2(x + barW, y + barH), bgColor, 4.0f);
-            // Fill
-            draw->AddRectFilled(ImVec2(x, y), ImVec2(x + barW * fraction, y + barH), fillColor, 4.0f);
-            // Border
-            draw->AddRect(ImVec2(x, y), ImVec2(x + barW, y + barH),
-                          IM_COL32(200, 200, 200, 200), 4.0f, 0, 1.5f);
+            const Engine::ECS::Entity seed = ents[row];
+            const uint64_t seedKey = entityKey(seed);
+            if (visited.find(seedKey) != visited.end())
+                continue;
 
-            // Text: "Team A   5/10   350/1400"
-            char buf[128];
-            snprintf(buf, sizeof(buf), "%s   %d/%d   %.0f/%.0f",
-                     label, stats.alive, stats.totalSpawned,
-                     std::max(0.0f, stats.currentHP), stats.maxHP);
+            const uint8_t teamId = teams[row].id;
 
-            ImVec2 textSize = ImGui::CalcTextSize(buf);
-            float tx = x + (barW - textSize.x) * 0.5f;
-            float ty = y + (barH - textSize.y) * 0.5f;
-            // Shadow
-            draw->AddText(ImVec2(tx + 1, ty + 1), IM_COL32(0, 0, 0, 200), buf);
-            // Foreground
-            draw->AddText(ImVec2(tx, ty), IM_COL32(255, 255, 255, 240), buf);
-        };
+            // Flood-fill cluster.
+            std::vector<Engine::ECS::Entity> queue;
+            queue.reserve(128);
+            queue.push_back(seed);
+            visited.insert(seedKey);
 
-        // Team A — top-left (blue) — PLAYER
-        drawTeamBar(padding, topY, teamA, "YOU (A)",
-                    IM_COL32(50, 120, 220, 220), IM_COL32(20, 40, 80, 180));
+            int aliveCount = 0;
+            float hpSum = 0.0f;
+            glm::vec3 sumPos{0.0f};
 
-        // Team B — top-right (red) — AI
-        drawTeamBar(screenW - barW - padding, topY, teamB, "Enemy (B)",
-                    IM_COL32(200, 50, 50, 220), IM_COL32(80, 20, 20, 180));
-
-        // --- Hint text ---
-        {
-            const char *hint = nullptr;
-            ImU32 hintColor = IM_COL32(200, 200, 200, 180);
-
-            if (!combat.isBattleStarted())
+            while (!queue.empty())
             {
-                hint = "Click anywhere to start — armies will charge toward each other!";
-                hintColor = IM_COL32(100, 255, 100, 240);
-            }
-            else
-            {
-                hint = "Battle in progress!";
-                hintColor = IM_COL32(255, 200, 50, 255);
+                const Engine::ECS::Entity cur = queue.back();
+                queue.pop_back();
+
+                auto *rec = ecs.entities.find(cur);
+                if (!rec)
+                    continue;
+                auto *st = ecs.stores.get(rec->archetypeId);
+                if (!st || rec->row >= st->size())
+                    continue;
+                if (!st->hasPosition() || !st->hasHealth() || !st->hasTeam())
+                    continue;
+                if (st->signature().has(disabledId) || st->signature().has(deadId))
+                    continue;
+                if (st->healths()[rec->row].value <= 0.0f)
+                    continue;
+                if (st->teams()[rec->row].id != teamId)
+                    continue;
+
+                const float cx = st->positions()[rec->row].x;
+                const float cy = st->positions()[rec->row].y;
+                const float cz = st->positions()[rec->row].z;
+
+                aliveCount += 1;
+                hpSum += std::max(0.0f, st->healths()[rec->row].value);
+                sumPos += glm::vec3(cx, cy, cz);
+
+                spatial.forNeighborsInRadius(cx, cz, SampleTuning::HUD_GROUP_LINK_RADIUS_M, [&](uint32_t nStoreId, uint32_t nRow)
+                                             {
+                                                 auto *ns = ecs.stores.get(nStoreId);
+                                                 if (!ns)
+                                                     return;
+                                                 if (nRow >= ns->size())
+                                                     return;
+                                                 if (!ns->hasPosition() || !ns->hasHealth() || !ns->hasTeam())
+                                                     return;
+                                                 if (ns->signature().has(disabledId) || ns->signature().has(deadId))
+                                                     return;
+                                                 if (ns->healths()[nRow].value <= 0.0f)
+                                                     return;
+                                                 if (ns->teams()[nRow].id != teamId)
+                                                     return;
+
+                                                 const float dx = ns->positions()[nRow].x - cx;
+                                                 const float dz = ns->positions()[nRow].z - cz;
+                                                 if (dx * dx + dz * dz > linkR2)
+                                                     return;
+
+                                                 const Engine::ECS::Entity cand = ns->entities()[nRow];
+                                                 const uint64_t k = entityKey(cand);
+                                                 if (visited.insert(k).second)
+                                                     queue.push_back(cand); });
             }
 
-            ImVec2 hintSize = ImGui::CalcTextSize(hint);
-            float hx = (screenW - hintSize.x) * 0.5f;
-            float hy = topY + barH + 12.0f;
-            draw->AddText(ImVec2(hx + 1, hy + 1), IM_COL32(0, 0, 0, 180), hint);
-            draw->AddText(ImVec2(hx, hy), hintColor, hint);
+            if (aliveCount <= 0)
+                continue;
+
+            GroupStats gs;
+            gs.team = teamId;
+            gs.alive = aliveCount;
+            gs.totalHP = hpSum;
+            gs.centroid = sumPos * (1.0f / static_cast<float>(aliveCount));
+            groups.push_back(gs);
         }
-
-        // --- Victory / Defeat overlay ---
-        if (combat.isBattleStarted() && teamA.totalSpawned > 0 && teamB.totalSpawned > 0 && (teamA.alive == 0 || teamB.alive == 0))
-        {
-            const float screenH = io.DisplaySize.y;
-
-            // Dim background
-            draw->AddRectFilled(ImVec2(0, 0), ImVec2(screenW, screenH),
-                                IM_COL32(0, 0, 0, 150));
-
-            const char *resultText = nullptr;
-            ImU32 resultColor = IM_COL32(255, 255, 255, 255);
-
-            if (teamA.alive > 0 && teamB.alive == 0)
-            {
-                resultText = "VICTORY!";
-                resultColor = IM_COL32(50, 220, 80, 255);
-            }
-            else if (teamB.alive > 0 && teamA.alive == 0)
-            {
-                resultText = "DEFEAT";
-                resultColor = IM_COL32(220, 50, 50, 255);
-            }
-            else
-            {
-                resultText = "DRAW";
-                resultColor = IM_COL32(200, 200, 100, 255);
-            }
-
-            // Large result text (scaled up)
-            ImFont *font = ImGui::GetFont();
-            const float bigSize = font->FontSize * 3.0f;
-
-            ImVec2 textSize = font->CalcTextSizeA(bigSize, FLT_MAX, 0.0f, resultText);
-            float tx = (screenW - textSize.x) * 0.5f;
-            float ty = screenH * 0.35f;
-
-            // Shadow
-            draw->AddText(font, bigSize, ImVec2(tx + 3, ty + 3),
-                          IM_COL32(0, 0, 0, 220), resultText);
-            // Main text
-            draw->AddText(font, bigSize, ImVec2(tx, ty),
-                          resultColor, resultText);
-
-            // Subtitle with survivor count
-            char subtitle[128];
-            if (teamA.alive > 0)
-                snprintf(subtitle, sizeof(subtitle), "%d of your units survived", teamA.alive);
-            else if (teamB.alive > 0)
-                snprintf(subtitle, sizeof(subtitle), "%d enemy units remaining", teamB.alive);
-            else
-                snprintf(subtitle, sizeof(subtitle), "Both armies have fallen");
-
-            ImVec2 subSize = ImGui::CalcTextSize(subtitle);
-            float sx = (screenW - subSize.x) * 0.5f;
-            float sy = ty + textSize.y + 16.0f;
-            draw->AddText(ImVec2(sx + 1, sy + 1), IM_COL32(0, 0, 0, 200), subtitle);
-            draw->AddText(ImVec2(sx, sy), IM_COL32(220, 220, 220, 240), subtitle);
-        }
-
-        ImGui::End();
     }
+
+    // Draw a thin translucent bar for each group.
+    const glm::mat4 view = m_camera.GetViewMatrix();
+    const glm::mat4 proj = m_camera.GetProjectionMatrix();
+    const glm::mat4 vp = proj * view;
+
+    const float screenW = io.DisplaySize.x;
+    const float screenH = io.DisplaySize.y;
+
+    const float kBarW = SampleTuning::HUD_BAR_WIDTH_PX;
+    const float kBarH = SampleTuning::HUD_BAR_HEIGHT_PX;
+
+    for (const auto &g : groups)
+    {
+        const glm::vec4 world(g.centroid.x, g.centroid.y + SampleTuning::HUD_WORLD_HEIGHT_OFFSET_M, g.centroid.z, 1.0f);
+        const glm::vec4 clip = vp * world;
+        if (clip.w <= 1e-6f)
+            continue;
+
+        const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        if (ndc.x < -1.1f || ndc.x > 1.1f || ndc.y < -1.1f || ndc.y > 1.1f)
+            continue;
+
+        const float sx = (ndc.x * 0.5f + 0.5f) * screenW;
+        const float sy = (ndc.y * 0.5f + 0.5f) * screenH;
+
+        const float maxHP = std::max(1.0f, static_cast<float>(g.alive) * maxHPPerUnit);
+        const float frac = std::clamp(g.totalHP / maxHP, 0.0f, 1.0f);
+
+        const ImU32 fill = (g.team == 0) ? SampleTuning::HUD_TEAM0_FILL : SampleTuning::HUD_TEAM1_FILL;
+        const ImU32 bg = (g.team == 0) ? SampleTuning::HUD_TEAM0_BG : SampleTuning::HUD_TEAM1_BG;
+        const ImU32 border = SampleTuning::HUD_BORDER;
+
+        const float x0 = sx - kBarW * 0.5f;
+        const float x1 = sx + kBarW * 0.5f;
+        const float y0 = sy;
+        const float y1 = sy + kBarH;
+
+        draw->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), bg, SampleTuning::HUD_BAR_CORNER_ROUNDING_PX);
+        draw->AddRectFilled(ImVec2(x0, y0), ImVec2(x0 + kBarW * frac, y1), fill, SampleTuning::HUD_BAR_CORNER_ROUNDING_PX);
+        draw->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), border, SampleTuning::HUD_BAR_CORNER_ROUNDING_PX, 0, SampleTuning::HUD_BAR_BORDER_THICKNESS_PX);
+
+        char buf[96];
+        snprintf(buf, sizeof(buf), "%d  %.0f", g.alive, std::max(0.0f, g.totalHP));
+        const ImVec2 ts = ImGui::CalcTextSize(buf);
+        draw->AddText(ImVec2(sx - ts.x * 0.5f, y1 + SampleTuning::HUD_TEXT_OFFSET_Y_PX), SampleTuning::HUD_TEXT, buf);
+    }
+
+    ImGui::End();
 }
 
 void MySampleApp::setupECSFromPrefabs()

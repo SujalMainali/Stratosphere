@@ -122,8 +122,7 @@ inline void CombatSystem::update(Engine::ECS::ECSContext &ecs, float dt)
     const float meleeRange2 = meleeRange * meleeRange;
     const float engageRange = std::max(0.0f, m_cfg.engageRange);
     const float engageRange2 = engageRange * engageRange;
-    const float disengageBuffer = 1.25f; // meters; prevents stop/chase flip-flop near range boundary
-    const float disengageRange = meleeRange + disengageBuffer;
+    const float disengageRange = meleeRange + CombatTuning::MELEE_DISENGAGE_BUFFER_M;
     const float disengageRange2 = disengageRange * disengageRange;
 
     auto hashAngle = [](uint32_t v) -> float
@@ -405,8 +404,7 @@ inline void CombatSystem::update(Engine::ECS::ECSContext &ecs, float dt)
         // Local engagement gating: only units that have an enemy within engageRange
         // participate in combat (chase/attack). This prevents global-aggro.
         // Once engaged, allow a small hysteresis so units don't instantly drop combat.
-        const float engageHysteresis = 2.5f; // meters
-        const float disengageEngageRange = std::max(0.0f, engageRange + engageHysteresis);
+        const float disengageEngageRange = std::max(0.0f, engageRange + CombatTuning::ENGAGE_HYSTERESIS_M);
         const float disengageEngageRange2 = disengageEngageRange * disengageEngageRange;
         const bool hasNearbyEnemy = (engageRange > 0.0f) ? (chosenDist2 <= engageRange2) : false;
         const bool keepEngaged = mem.engaged && (chosenDist2 <= disengageEngageRange2);

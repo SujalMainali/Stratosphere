@@ -31,6 +31,11 @@ namespace CombatTuning
 {
     static constexpr float MELEE_RANGE_DEFAULT = 2.0f;
     static constexpr float ENGAGE_RANGE_DEFAULT = 10.0f;
+    // Prevents units from instantly dropping combat when hovering near the engage threshold.
+    static constexpr float ENGAGE_HYSTERESIS_M = 2.5f;
+
+    // Prevents stop/chase flip-flop when hovering near the melee range boundary.
+    static constexpr float MELEE_DISENGAGE_BUFFER_M = 1.25f;
     static constexpr float DAMAGE_MIN_DEFAULT = 12.0f;
     static constexpr float DAMAGE_MAX_DEFAULT = 28.0f;
     static constexpr float DEATH_REMOVE_DELAY_DEFAULT = 3.0f;
