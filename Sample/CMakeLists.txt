@@ -1,16 +1,22 @@
 cmake_minimum_required(VERSION 3.20)
 project(Sample LANGUAGES CXX)
 
+# Shared gameplay/runtime code (used by SampleApp and EditorApp)
+add_library(SampleGame STATIC
+    src/ScenarioSpawner.cpp
+    src/update.cpp
+)
+target_link_libraries(SampleGame PUBLIC Engine)
+target_link_libraries(SampleGame PUBLIC nlohmann_json::nlohmann_json)
+target_include_directories(SampleGame PUBLIC ${CMAKE_SOURCE_DIR}/Engine/include)
+target_include_directories(SampleGame PUBLIC ${CMAKE_SOURCE_DIR}/Sample)
+
 add_executable(SampleApp
     src/main.cpp
     src/MySampleApp.cpp
-    src/ScenarioSpawner.cpp
-    src/update.cpp
     src/VerifyLoadSModel.cpp
-    editor/BattleConfigEditor.cpp
 )
-target_link_libraries(SampleApp PRIVATE Engine)
-target_link_libraries(SampleApp PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(SampleApp PRIVATE SampleGame)
 target_include_directories(SampleApp PRIVATE ${CMAKE_SOURCE_DIR}/Engine/include)
 target_include_directories(SampleApp PRIVATE ${CMAKE_SOURCE_DIR}/Sample)
 
@@ -177,17 +183,4 @@ foreach(JSON_FILE ${SAMPLE_ENTITY_JSON_FILES})
     )
 endforeach()
 
-FetchContent_Declare(
-  glfw
-  GIT_REPOSITORY https://github.com/glfw/glfw.git
-  GIT_TAG        3.3.8
-)
-FetchContent_MakeAvailable(glfw)
-
-include(FetchContent)
-
-FetchContent_Declare(nlohmann_json
-  GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG v3.11.3
-)
-FetchContent_MakeAvailable(nlohmann_json)
+## Dependencies are vendored by the Engine target (glfw, nlohmann_json, imgui).

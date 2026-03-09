@@ -38,3 +38,4 @@ FetchContent_MakeAvailable(glm)
 # Add subprojects
 add_subdirectory(Engine)
 add_subdirectory(Sample)
+add_subdirectory(Editor)

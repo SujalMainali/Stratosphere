@@ -110,14 +110,9 @@ MySampleApp::MySampleApp() : Engine::Application()
     // Systems can be initialized after prefabs are registered.
     m_systems.Initialize(GetECS());
 
-    // Load battle config and unit defaults into the editor panel.
-    m_configEditor.loadFromFile("BattleConfig.json");
-    m_configEditor.loadUnitConfig("entities/CombatKnight.json");
-
     // Hook engine window events into our handler.
     SetEventCallback([this](const std::string &e)
                      { this->OnEvent(e); });
-
 }
 
 MySampleApp::~MySampleApp() = default;
@@ -605,9 +600,6 @@ void MySampleApp::OnRender()
 
         ImGui::End();
     }
-
-    // --- Battle Config Editor panel ---
-    m_configEditor.draw(GetECS(), m_systems);
 }
 
 void MySampleApp::setupECSFromPrefabs()
@@ -786,12 +778,6 @@ void MySampleApp::OnEvent(const std::string &name)
         iss >> xoff >> yoff;
         (void)xoff;
         m_scrollDelta += static_cast<float>(yoff);
-        return;
-    }
-
-    if (name == "F2Pressed")
-    {
-        m_configEditor.toggleVisible();
         return;
     }
 
