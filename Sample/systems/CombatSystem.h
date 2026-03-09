@@ -189,6 +189,17 @@ public:
         return (it != m_teamStats.end()) ? it->second : empty;
     }
 
+    void setTeamTotalSpawned(uint8_t teamId, int count)
+    {
+        m_teamStats[teamId].totalSpawned = count;
+        m_teamStats[teamId].maxHP = count * m_cfg.maxHPPerUnit;
+    }
+
+    void setTeamMaxHP(uint8_t teamId, float maxHP)
+    {
+        m_teamStats[teamId].maxHP = maxHP;
+    }
+
     void buildMasks(Engine::ECS::ComponentRegistry &registry) override;
     void update(Engine::ECS::ECSContext &ecs, float dt) override;
 

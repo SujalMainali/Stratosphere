@@ -10,76 +10,74 @@ namespace Sample
 {
     class SystemRunner;
 
-    // ImGui-based runtime editor for BattleConfig.json parameters.
-    // Skips obstacles. Allows editing combat tuning, anchors, and spawn groups,
-    // with Apply, Reset-to-file, and Restart-battle buttons.
+    // ImGui-based runtime editor for BattleConfig.json combat tuning
+    // and CombatKnight.json unit parameters.  F1 toggles visibility.
     class BattleConfigEditor
     {
     public:
         BattleConfigEditor();
 
-        // Load initial values from BattleConfig.json on disk.
+        // Load combat tuning from BattleConfig.json.
         void loadFromFile(const std::string &path = "BattleConfig.json");
 
-        // Draw the editor panel.  Call this inside OnRender().
+        // Load unit defaults from a prefab JSON (e.g. CombatKnight.json).
+        void loadUnitConfig(const std::string &path = "entities/CombatKnight.json");
+
+        // Draw the editor panel (no-op when hidden).  Call inside OnRender().
         void draw(Engine::ECS::ECSContext &ecs, SystemRunner &systems);
 
-        // Read-only access to the live combat config held by the editor.
+        void toggleVisible() { m_visible = !m_visible; }
+        bool isVisible() const { return m_visible; }
+
         const CombatSystem::CombatConfig &combatConfig() const { return m_combat; }
 
     private:
         void drawCombatSection();
-        void drawAnchorsSection();
         void drawSpawnGroupsSection();
         void drawControlButtons(Engine::ECS::ECSContext &ecs, SystemRunner &systems);
 
-        // Applies the current editor values to the running game systems.
+        void saveSpawnGroupsToFile();
+
         void applyToSystems(SystemRunner &systems);
-
-        // Destroys all entities and re-spawns from the original config file, restarting the battle.
-        void restartBattle(Engine::ECS::ECSContext &ecs, SystemRunner &systems);
-
-        // Helper: removes every entity from all archetype stores.
+        void applyUnitParamsToEntities(Engine::ECS::ECSContext &ecs);
+        void respawn(Engine::ECS::ECSContext &ecs, SystemRunner &systems);
+        void resetGame(Engine::ECS::ECSContext &ecs, SystemRunner &systems);
         void clearAllEntities(Engine::ECS::ECSContext &ecs);
 
         // --- Combat tuning (mirrors CombatConfig) ---
         CombatSystem::CombatConfig m_combat;
+        CombatSystem::CombatConfig m_originalCombat;
 
-        // --- Anchors ---
-        struct Anchor
+        // --- Per-team spawn group parameters (from BattleConfig.json) ---
+        struct UnitParams
         {
-            std::string name;
-            float x = 0.0f;
-            float z = 0.0f;
+            float health         = 140.0f;
+            float moveSpeed      = 5.0f;
+            float radius         = 1.5f;
+            float separation     = 1.0f;
+            float attackInterval = 1.5f;
         };
-        std::vector<Anchor> m_anchors;
 
-        // --- Spawn Groups ---
-        struct SpawnGroupUI
+        struct SpawnGroupParams
         {
-            std::string id;
-            std::string unitType;
-            int count = 0;
-            std::string anchorName;
-            float offsetX = 0.0f;
-            float offsetZ = 0.0f;
-            float facingYawDeg = 0.0f;
-            int team = 0;
-
-            // Formation
-            std::string formationKind = "grid";
-            int columns = 5;
-            float spacingM = 5.0f;
-            bool spacingAuto = false;
-            float jitterM = 0.2f;
-            float circleRadiusM = 0.0f;
+            int   count      = 20;
+            float offsetX    = 0.0f;
+            float offsetZ    = 0.0f;
+            int   columns    = 5;
+            float spacing    = 5.0f;
+            float jitter     = 0.2f;
+            UnitParams unit;
         };
-        std::vector<SpawnGroupUI> m_spawnGroups;
+        SpawnGroupParams m_teamA;
+        SpawnGroupParams m_originalTeamA;
+        SpawnGroupParams m_teamB;
+        SpawnGroupParams m_originalTeamB;
 
-        // Path used for load/save.
-        std::string m_filePath = "BattleConfig.json";
+        // --- State ---
+        bool m_visible = true;
+        std::string m_battleConfigPath = "BattleConfig.json";
+        std::string m_unitConfigPath   = "entities/CombatKnight.json";
 
-        // Status message shown briefly after an action.
         std::string m_statusMsg;
         float m_statusTimer = 0.0f;
     };

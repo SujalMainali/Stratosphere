@@ -15,11 +15,11 @@ namespace Sample
 BattleConfigEditor::BattleConfigEditor() = default;
 
 // ---------------------------------------------------------------------------
-// Load from JSON on disk
+// Load combat tuning from BattleConfig.json
 // ---------------------------------------------------------------------------
 void BattleConfigEditor::loadFromFile(const std::string &path)
 {
-    m_filePath = path;
+    m_battleConfigPath = path;
 
     std::ifstream file(path);
     if (!file.is_open())
@@ -41,7 +41,6 @@ void BattleConfigEditor::loadFromFile(const std::string &path)
         return;
     }
 
-    // --- Combat ---
     if (root.contains("combat") && root["combat"].is_object())
     {
         const auto &c = root["combat"];
@@ -59,7 +58,6 @@ void BattleConfigEditor::loadFromFile(const std::string &path)
         m_combat.cooldownJitter  = g("cooldownJitter",  CombatTuning::COOLDOWN_JITTER_DEFAULT);
         m_combat.staggerMax      = g("staggerMax",      CombatTuning::STAGGER_MAX_DEFAULT);
 
-        // Legacy single-value fallback
         if (c.contains("damagePerHit") && !c.contains("damageMin"))
         {
             float d = c["damagePerHit"].get<float>();
@@ -68,65 +66,76 @@ void BattleConfigEditor::loadFromFile(const std::string &path)
         }
     }
 
-    // --- Anchors ---
-    m_anchors.clear();
-    if (root.contains("anchors") && root["anchors"].is_object())
-    {
-        for (auto it = root["anchors"].begin(); it != root["anchors"].end(); ++it)
-        {
-            Anchor a;
-            a.name = it.key();
-            a.x = it.value().value("x", 0.0f);
-            a.z = it.value().value("z", 0.0f);
-            m_anchors.push_back(a);
-        }
-    }
+    m_originalCombat = m_combat;
 
-    // --- Spawn Groups ---
-    m_spawnGroups.clear();
+    // --- Load spawn group parameters ---
     if (root.contains("spawnGroups") && root["spawnGroups"].is_array())
     {
         for (const auto &sg : root["spawnGroups"])
         {
-            SpawnGroupUI g;
-            g.id              = sg.value("id", std::string(""));
-            g.unitType        = sg.value("unitType", std::string("CombatKnight"));
-            g.count           = sg.value("count", 0);
-            g.anchorName      = sg.value("anchor", std::string(""));
-            g.team            = sg.value("team", 0);
-            g.facingYawDeg    = sg.value("facingYawDeg", 0.0f);
-
-            if (sg.contains("offset") && sg["offset"].is_object())
-            {
-                g.offsetX = sg["offset"].value("x", 0.0f);
-                g.offsetZ = sg["offset"].value("z", 0.0f);
-            }
-
+            std::string id = sg.value("id", std::string(""));
+            SpawnGroupParams params;
+            params.count   = sg.value("count", 20);
+            params.offsetX = sg.contains("offset") ? sg["offset"].value("x", 0.0f) : 0.0f;
+            params.offsetZ = sg.contains("offset") ? sg["offset"].value("z", 0.0f) : 0.0f;
             if (sg.contains("formation") && sg["formation"].is_object())
             {
                 const auto &f = sg["formation"];
-                g.formationKind = f.value("kind", std::string("grid"));
-                g.columns       = f.value("columns", 5);
-                g.jitterM       = f.value("jitter_m", 0.2f);
-                g.circleRadiusM = f.value("radius_m", 0.0f);
-
-                if (f.contains("spacing_m"))
-                {
-                    if (f["spacing_m"].is_string() && f["spacing_m"].get<std::string>() == "auto")
-                        g.spacingAuto = true;
-                    else if (f["spacing_m"].is_number())
-                    {
-                        g.spacingAuto = false;
-                        g.spacingM = f["spacing_m"].get<float>();
-                    }
-                }
+                params.columns = f.value("columns", 5);
+                params.spacing = f.contains("spacing_m") && f["spacing_m"].is_number()
+                                     ? f["spacing_m"].get<float>() : 5.0f;
+                params.jitter  = f.value("jitter_m", 0.2f);
             }
-            m_spawnGroups.push_back(g);
+
+            if (id == "team_a")
+                m_teamA = params;
+            else if (id == "team_b")
+                m_teamB = params;
         }
     }
+    m_originalTeamA = m_teamA;
+    m_originalTeamB = m_teamB;
 
     m_statusMsg = "Loaded " + path;
     m_statusTimer = 2.0f;
+}
+
+// ---------------------------------------------------------------------------
+// Load unit defaults from a prefab JSON (e.g. CombatKnight.json)
+// ---------------------------------------------------------------------------
+void BattleConfigEditor::loadUnitConfig(const std::string &path)
+{
+    m_unitConfigPath = path;
+
+    std::ifstream file(path);
+    if (!file.is_open())
+        return;
+
+    json root;
+    try { root = json::parse(file); }
+    catch (...) { return; }
+
+    if (root.contains("defaults") && root["defaults"].is_object())
+    {
+        const auto &d = root["defaults"];
+        UnitParams u;
+        if (d.contains("Health"))
+            u.health = d["Health"].value("value", 140.0f);
+        if (d.contains("MoveSpeed"))
+            u.moveSpeed = d["MoveSpeed"].value("value", 5.0f);
+        if (d.contains("Radius"))
+            u.radius = d["Radius"].value("r", 1.5f);
+        if (d.contains("Separation"))
+            u.separation = d["Separation"].value("value", 1.0f);
+        if (d.contains("AttackCooldown"))
+            u.attackInterval = d["AttackCooldown"].value("interval", 1.5f);
+
+        m_teamA.unit = u;
+        m_teamB.unit = u;
+    }
+
+    m_originalTeamA = m_teamA;
+    m_originalTeamB = m_teamB;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +143,9 @@ void BattleConfigEditor::loadFromFile(const std::string &path)
 // ---------------------------------------------------------------------------
 void BattleConfigEditor::draw(Engine::ECS::ECSContext &ecs, SystemRunner &systems)
 {
+    if (!m_visible)
+        return;
+
     // Tick status timer
     if (m_statusTimer > 0.0f)
     {
@@ -145,12 +157,10 @@ void BattleConfigEditor::draw(Engine::ECS::ECSContext &ecs, SystemRunner &system
 
     ImGuiIO &io = ImGui::GetIO();
 
-    // Dock to the right side of the screen, full height
     const float panelWidth = 380.0f;
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - panelWidth, 0.0f));
     ImGui::SetNextWindowSize(ImVec2(panelWidth, io.DisplaySize.y));
 
-    // Solid opaque background so the panel doesn't bleed into the game world
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.12f, 0.12f, 0.14f, 1.0f));
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove
@@ -163,8 +173,6 @@ void BattleConfigEditor::draw(Engine::ECS::ECSContext &ecs, SystemRunner &system
     drawControlButtons(ecs, systems);
     ImGui::Separator();
     drawCombatSection();
-    ImGui::Separator();
-    drawAnchorsSection();
     ImGui::Separator();
     drawSpawnGroupsSection();
 
@@ -215,98 +223,79 @@ void BattleConfigEditor::drawCombatSection()
 }
 
 // ---------------------------------------------------------------------------
-// Anchors Section
+// Spawn Groups Section (per-team count, offset, formation + unit params)
 // ---------------------------------------------------------------------------
-void BattleConfigEditor::drawAnchorsSection()
+void BattleConfigEditor::drawSpawnGroupsSection()
 {
-    if (!ImGui::CollapsingHeader("Anchors (Spawn Origins)"))
+    if (!ImGui::CollapsingHeader("Spawn Groups", ImGuiTreeNodeFlags_DefaultOpen))
         return;
 
     ImGui::PushItemWidth(-140);
 
-    for (size_t i = 0; i < m_anchors.size(); ++i)
+    auto drawTeam = [](const char *label, SpawnGroupParams &p)
     {
-        auto &a = m_anchors[i];
-        ImGui::PushID(static_cast<int>(i));
-
-        ImGui::Text("%s", a.name.c_str());
-        ImGui::DragFloat("X", &a.x, 0.5f, -300.0f, 300.0f, "%.1f");
-        ImGui::SameLine();
-        ImGui::DragFloat("Z", &a.z, 0.5f, -300.0f, 300.0f, "%.1f");
-
-        ImGui::PopID();
-        if (i + 1 < m_anchors.size())
+        ImGui::PushID(label);
+        if (ImGui::CollapsingHeader(label))
+        {
+            ImGui::SliderInt("Count",    &p.count,   1, 1000);
+            ImGui::SliderFloat("Offset X", &p.offsetX, -50.0f, 50.0f, "%.1f");
+            ImGui::SliderFloat("Offset Z", &p.offsetZ, -50.0f, 50.0f, "%.1f");
+            ImGui::SliderInt("Columns",  &p.columns, 1, 20);
+            ImGui::SliderFloat("Spacing",  &p.spacing, 1.0f, 20.0f, "%.1f m");
+            ImGui::SliderFloat("Jitter",   &p.jitter,  0.0f,  3.0f,  "%.2f m");
             ImGui::Spacing();
-    }
+            ImGui::Text("Unit Parameters");
+            ImGui::SliderFloat("Health",          &p.unit.health,         1.0f, 1000.0f, "%.0f");
+            ImGui::SliderFloat("Move Speed",      &p.unit.moveSpeed,      0.5f,   30.0f, "%.1f");
+            ImGui::SliderFloat("Radius",          &p.unit.radius,         0.1f,   10.0f, "%.2f");
+            ImGui::SliderFloat("Separation",      &p.unit.separation,     0.0f,   10.0f, "%.2f");
+            ImGui::SliderFloat("Attack Interval", &p.unit.attackInterval,  0.1f,   10.0f, "%.2f s");
+        }
+        ImGui::PopID();
+    };
+
+    drawTeam("Team A", m_teamA);
+    drawTeam("Team B", m_teamB);
 
     ImGui::PopItemWidth();
 }
 
 // ---------------------------------------------------------------------------
-// Spawn Groups Section
+// Save spawn group edits back to BattleConfig.json
 // ---------------------------------------------------------------------------
-void BattleConfigEditor::drawSpawnGroupsSection()
+void BattleConfigEditor::saveSpawnGroupsToFile()
 {
-    if (!ImGui::CollapsingHeader("Spawn Groups"))
+    std::ifstream inFile(m_battleConfigPath);
+    if (!inFile.is_open()) return;
+
+    json root;
+    try { root = json::parse(inFile); }
+    catch (...) { return; }
+    inFile.close();
+
+    if (!root.contains("spawnGroups") || !root["spawnGroups"].is_array())
         return;
 
-    ImGui::PushItemWidth(-140);
-
-    for (size_t i = 0; i < m_spawnGroups.size(); ++i)
+    for (auto &sg : root["spawnGroups"])
     {
-        auto &sg = m_spawnGroups[i];
-        ImGui::PushID(static_cast<int>(i));
+        std::string id = sg.value("id", std::string(""));
+        const SpawnGroupParams *p = nullptr;
+        if (id == "team_a") p = &m_teamA;
+        else if (id == "team_b") p = &m_teamB;
+        else continue;
 
-        char label[128];
-        snprintf(label, sizeof(label), "%s (Team %d)###sg%zu", sg.id.c_str(), sg.team, i);
-        if (ImGui::TreeNode(label))
-        {
-            // Unit type (read-only display)
-            ImGui::Text("Unit Type: %s", sg.unitType.c_str());
-
-            ImGui::SliderInt("Count", &sg.count, 1, 100);
-            ImGui::SliderInt("Team",  &sg.team,  0, 3);
-            ImGui::SliderFloat("Facing (deg)", &sg.facingYawDeg, -180.0f, 180.0f, "%.1f");
-
-            ImGui::Text("Anchor: %s", sg.anchorName.c_str());
-            ImGui::DragFloat("Offset X", &sg.offsetX, 0.5f, -200.0f, 200.0f, "%.1f");
-            ImGui::DragFloat("Offset Z", &sg.offsetZ, 0.5f, -200.0f, 200.0f, "%.1f");
-
-            if (ImGui::TreeNode("Formation"))
-            {
-                // Kind selector
-                const char *kinds[] = {"grid", "circle"};
-                int kindIdx = (sg.formationKind == "circle") ? 1 : 0;
-                if (ImGui::Combo("Kind", &kindIdx, kinds, 2))
-                    sg.formationKind = kinds[kindIdx];
-
-                if (kindIdx == 0) // grid
-                {
-                    ImGui::SliderInt("Columns", &sg.columns, 1, 20);
-                }
-                else // circle
-                {
-                    ImGui::DragFloat("Circle Radius", &sg.circleRadiusM, 0.5f, 1.0f, 100.0f, "%.1f m");
-                }
-
-                ImGui::Checkbox("Auto Spacing", &sg.spacingAuto);
-                if (!sg.spacingAuto)
-                {
-                    ImGui::DragFloat("Spacing", &sg.spacingM, 0.1f, 0.5f, 30.0f, "%.1f m");
-                }
-
-                ImGui::DragFloat("Jitter", &sg.jitterM, 0.05f, 0.0f, 5.0f, "%.2f m");
-
-                ImGui::TreePop();
-            }
-
-            ImGui::TreePop();
-        }
-
-        ImGui::PopID();
+        sg["count"] = p->count;
+        sg["offset"]["x"] = p->offsetX;
+        sg["offset"]["z"] = p->offsetZ;
+        if (!sg.contains("formation")) sg["formation"] = json::object();
+        sg["formation"]["columns"]   = p->columns;
+        sg["formation"]["spacing_m"] = p->spacing;
+        sg["formation"]["jitter_m"]  = p->jitter;
     }
 
-    ImGui::PopItemWidth();
+    std::ofstream outFile(m_battleConfigPath);
+    if (outFile.is_open())
+        outFile << root.dump(4) << std::endl;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,53 +303,146 @@ void BattleConfigEditor::drawSpawnGroupsSection()
 // ---------------------------------------------------------------------------
 void BattleConfigEditor::drawControlButtons(Engine::ECS::ECSContext &ecs, SystemRunner &systems)
 {
-    // Apply — pushes combat config to running systems (instant for combat params)
     if (ImGui::Button("Apply Changes"))
     {
         applyToSystems(systems);
-        m_statusMsg = "Combat config applied (live)";
+        applyUnitParamsToEntities(ecs);
+        m_statusMsg = "Changes applied (live)";
         m_statusTimer = 2.0f;
     }
 
     ImGui::SameLine();
 
-    // Restart — clears entities, re-spawns from original file, applies editor combat config, starts
-    if (ImGui::Button("Restart Battle"))
+    if (ImGui::Button("Respawn"))
     {
-        restartBattle(ecs, systems);
-        m_statusMsg = "Battle restarted with current settings";
+        respawn(ecs, systems);
+        m_statusMsg = "Respawned with current config";
+        m_statusTimer = 3.0f;
+    }
+
+    ImGui::SameLine();
+
+    if (ImGui::Button("Save Config"))
+    {
+        saveSpawnGroupsToFile();
+        m_statusMsg = "Config saved to " + m_battleConfigPath;
+        m_statusTimer = 3.0f;
+    }
+
+    if (ImGui::Button("Reset Game"))
+    {
+        resetGame(ecs, systems);
+        m_statusMsg = "Game reset to original config";
         m_statusTimer = 3.0f;
     }
 }
 
 // ---------------------------------------------------------------------------
-// Apply combat config to running systems (instant for poll-based params)
+// Apply combat config to running systems
 // ---------------------------------------------------------------------------
 void BattleConfigEditor::applyToSystems(SystemRunner &systems)
 {
+    // Use the higher of the two teams' health for maxHPPerUnit so HUD bars scale correctly.
+    m_combat.maxHPPerUnit = std::max(m_teamA.unit.health, m_teamB.unit.health);
     systems.GetCombatSystemMut().applyConfig(m_combat);
+
+    // Update HUD total-spawned counts and per-team maxHP from the editor.
+    systems.GetCombatSystemMut().setTeamTotalSpawned(0, m_teamA.count);
+    systems.GetCombatSystemMut().setTeamMaxHP(0, m_teamA.count * m_teamA.unit.health);
+    systems.GetCombatSystemMut().setTeamTotalSpawned(1, m_teamB.count);
+    systems.GetCombatSystemMut().setTeamMaxHP(1, m_teamB.count * m_teamB.unit.health);
 }
 
 // ---------------------------------------------------------------------------
-// Restart: clear entities safely, re-spawn from original file, apply config
+// Apply unit params to all living entities with matching components
 // ---------------------------------------------------------------------------
-void BattleConfigEditor::restartBattle(Engine::ECS::ECSContext &ecs, SystemRunner &systems)
+void BattleConfigEditor::applyUnitParamsToEntities(Engine::ECS::ECSContext &ecs)
 {
-    // 1) Clear all entity data from stores (keeps component registry, prefabs, archetypes intact).
+    for (const auto &storePtr : ecs.stores.stores())
+    {
+        if (!storePtr || storePtr->size() == 0)
+            continue;
+
+        if (!storePtr->hasHealth() || !storePtr->hasTeam())
+            continue;
+
+        size_t n = storePtr->size();
+        const auto &teams = storePtr->teams();
+
+        for (size_t i = 0; i < n; ++i)
+        {
+            const UnitParams &u = (teams[i].id == 0) ? m_teamA.unit : m_teamB.unit;
+
+            storePtr->healths()[i].value = u.health;
+
+            if (storePtr->hasMoveSpeed())
+                storePtr->moveSpeeds()[i].value = u.moveSpeed;
+
+            if (storePtr->hasRadius())
+                storePtr->radii()[i].r = u.radius;
+
+            if (storePtr->hasSeparation())
+                storePtr->separations()[i].value = u.separation;
+
+            if (storePtr->hasAttackCooldown())
+                storePtr->attackCooldowns()[i].interval = u.attackInterval;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Respawn: keep current editor values, clear & re-spawn entities
+// ---------------------------------------------------------------------------
+void BattleConfigEditor::respawn(Engine::ECS::ECSContext &ecs, SystemRunner &systems)
+{
+    // Write current spawn group params so the spawner reads the new counts.
+    saveSpawnGroupsToFile();
+
+    // Clear all entities safely.
     clearAllEntities(ecs);
 
-    // 2) Reset combat system battle state (death queues, flags, unit memories)
-    //    and allow SystemRunner to re-initialize query IDs.
+    // Reset systems so they re-initialize queries.
     systems.ResetForRestart();
     systems.Initialize(ecs);
 
-    // 3) Re-spawn everything from the original untouched config file.
-    SpawnFromScenarioFile(ecs, m_filePath, /*selectSpawned=*/false);
+    // Re-spawn from the scenario file with current editor values.
+    SpawnFromScenarioFile(ecs, m_battleConfigPath, false);
 
-    // 4) Apply the editor's current combat tuning on top and start.
+    // Push current editor configs to running systems & entities.
     applyToSystems(systems);
+    applyUnitParamsToEntities(ecs);
+
     systems.GetCombatSystemMut().setHumanTeam(0);
-    systems.GetCombatSystemMut().startBattle();
+}
+
+// ---------------------------------------------------------------------------
+// Reset Game: reload original configs, clear entities, re-spawn
+// ---------------------------------------------------------------------------
+void BattleConfigEditor::resetGame(Engine::ECS::ECSContext &ecs, SystemRunner &systems)
+{
+    // Restore editor sliders to the original values loaded from disk.
+    m_combat = m_originalCombat;
+    m_teamA  = m_originalTeamA;
+    m_teamB  = m_originalTeamB;
+
+    // Write current spawn group params so the spawner reads them.
+    saveSpawnGroupsToFile();
+
+    // Clear all entities safely.
+    clearAllEntities(ecs);
+
+    // Reset systems so they re-initialize queries.
+    systems.ResetForRestart();
+    systems.Initialize(ecs);
+
+    // Re-spawn from the original scenario file.
+    SpawnFromScenarioFile(ecs, m_battleConfigPath, false);
+
+    // Push original configs to running systems.
+    applyToSystems(systems);
+    applyUnitParamsToEntities(ecs);
+
+    systems.GetCombatSystemMut().setHumanTeam(0);
 }
 
 // ---------------------------------------------------------------------------
@@ -373,7 +455,6 @@ void BattleConfigEditor::clearAllEntities(Engine::ECS::ECSContext &ecs)
         if (!storePtr)
             continue;
 
-        // Destroy entity records for every entity in this store.
         while (storePtr->size() > 0)
         {
             Engine::ECS::Entity e = storePtr->entities()[storePtr->size() - 1];

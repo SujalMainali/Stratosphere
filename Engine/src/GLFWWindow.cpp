@@ -66,6 +66,7 @@ namespace Engine
                     if (key == GLFW_KEY_SPACE)  d->EventCallback("SpacePressed");
                     if (key == GLFW_KEY_ENTER) d->EventCallback("EnterPressed");
                     if (key == GLFW_KEY_F1) d->EventCallback("F1Pressed");
+                    if (key == GLFW_KEY_F2) d->EventCallback("F2Pressed");
                 }
                 if (action == GLFW_RELEASE) {
                     auto d = static_cast<GLFWWindowData*>(glfwGetWindowUserPointer(wnd));
