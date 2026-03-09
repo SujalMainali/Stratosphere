@@ -293,7 +293,14 @@ private:
     struct UnitCombatMemory
     {
         Engine::ECS::Entity targetEnemy{};
+        // True if this unit is currently participating in combat logic (chasing or fighting).
+        // Used to prevent global-aggro behavior where units across the map start chasing.
         bool engaged = false;
+        // Tracks whether the unit was in melee recently (for hysteresis around meleeRange).
+        bool inMelee = false;
+        // Tracks whether the CombatSystem has issued a chase move for this unit.
+        // Allows safely clearing combat-driven MoveTarget without stomping player commands.
+        bool combatMoveIssued = false;
         uint32_t lastSeenFrame = 0;
     };
     std::unordered_map<uint64_t, UnitCombatMemory> m_unitMem;

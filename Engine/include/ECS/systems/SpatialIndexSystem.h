@@ -273,6 +273,41 @@ public:
         }
     }
 
+    // Visit candidate neighbors within an approximate radius in meters.
+    // Implementation detail: we visit all grid cells that intersect the query circle's bounding box
+    // (in grid coordinates) and let callers apply an exact distance check if needed.
+    template <typename Visitor>
+    void forNeighborsInRadius(float x, float z, float radiusMeters, Visitor &&visit) const
+    {
+        const float r = std::max(0.0f, radiusMeters);
+        const int k = static_cast<int>(std::ceil(r / m_cellSize));
+        const int gx = static_cast<int>(std::floor(x / m_cellSize));
+        const int gz = static_cast<int>(std::floor(z / m_cellSize));
+
+        GridKeyLess less;
+        for (int dx = -k; dx <= k; ++dx)
+        {
+            for (int dz = -k; dz <= k; ++dz)
+            {
+                const GridKey key{gx + dx, gz + dz};
+                auto it = std::lower_bound(m_cells.begin(), m_cells.end(), key,
+                                           [&](const GridCellRange &cell, const GridKey &k2)
+                                           { return less(cell.key, k2); });
+                if (it == m_cells.end())
+                    continue;
+                if (less(key, it->key) || less(it->key, key))
+                    continue;
+
+                const uint32_t end = it->start + it->count;
+                for (uint32_t i = it->start; i < end; ++i)
+                {
+                    const auto &e = m_entries[i].entry;
+                    visit(e.storeId, e.row);
+                }
+            }
+        }
+    }
+
 private:
     float m_cellSize; // equals neighbor radius R
 

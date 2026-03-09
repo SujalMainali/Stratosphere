@@ -43,6 +43,10 @@ namespace Sample
         /// Mutable access for config loading
         CombatSystem &GetCombatSystemMut() { return m_combat; }
 
+        /// Access spatial index for fast proximity queries (selection, combat helpers, etc.)
+        const SpatialIndexSystem &GetSpatialIndex() const { return m_spatialIndex; }
+        SpatialIndexSystem &GetSpatialIndexMut() { return m_spatialIndex; }
+
         /// Reset all systems for a clean restart (clears cached queries, battle state, etc.)
         void ResetForRestart(Engine::ECS::ECSContext &ecs);
 

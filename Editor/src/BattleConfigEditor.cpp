@@ -230,8 +230,7 @@ namespace Editor
         if (m_newAnchorName[0] == '\0')
             std::snprintf(m_newAnchorName, sizeof(m_newAnchorName), "%s", "new_anchor");
 
-        ImGui::InputText("New Anchor Name", m_newAnchorName, sizeof(m_newAnchorName));
-        ImGui::SameLine();
+        ImGui::InputText("##1", m_newAnchorName, sizeof(m_newAnchorName));
         if (ImGui::Button("Add Anchor"))
         {
             const std::string key = std::string(m_newAnchorName);
@@ -265,8 +264,7 @@ namespace Editor
             auto &a = anchors[m_selectedAnchorKey];
             ensureXZObject(a);
 
-            ImGui::InputText("Name", m_renameAnchorName, sizeof(m_renameAnchorName));
-            ImGui::SameLine();
+            ImGui::InputText("##2", m_renameAnchorName, sizeof(m_renameAnchorName));
             if (ImGui::Button("Rename"))
             {
                 const std::string newKey = std::string(m_renameAnchorName);
@@ -323,8 +321,7 @@ namespace Editor
         if (m_newSpawnGroupId[0] == '\0')
             std::snprintf(m_newSpawnGroupId, sizeof(m_newSpawnGroupId), "%s", "spawn_group");
 
-        ImGui::InputText("New Group Id", m_newSpawnGroupId, sizeof(m_newSpawnGroupId));
-        ImGui::SameLine();
+        ImGui::InputText("##3", m_newSpawnGroupId, sizeof(m_newSpawnGroupId));
         if (ImGui::Button("Add Spawn Group"))
         {
             json g = json::object();
@@ -510,8 +507,7 @@ namespace Editor
         if (m_newObstaclePrefab[0] == '\0')
             std::snprintf(m_newObstaclePrefab, sizeof(m_newObstaclePrefab), "%s", "TreeStumpWall");
 
-        ImGui::InputText("New Obstacle Prefab", m_newObstaclePrefab, sizeof(m_newObstaclePrefab));
-        ImGui::SameLine();
+        ImGui::InputText("Prefab", m_newObstaclePrefab, sizeof(m_newObstaclePrefab));
         if (ImGui::Button("Add Obstacle"))
         {
             json o = json::object();

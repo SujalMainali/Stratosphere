@@ -320,47 +320,154 @@ void MySampleApp::PickAndSelectEntityAtCursor()
                 (void)ecs.removeTag(e, selectedId);
         };
 
-        auto selectTeamGroup = [&](uint8_t teamToSelect)
+        auto hasAnySelected = [&]() -> bool
         {
-            clearSelection();
-            std::vector<Engine::ECS::Entity> toSelect;
-            toSelect.reserve(512);
             for (const auto &ptr : ecs.stores.stores())
             {
                 if (!ptr)
                     continue;
                 const auto &store = *ptr;
-                if (!store.signature().has(posId))
+                if (store.signature().has(selectedId) && store.size() > 0)
+                    return true;
+            }
+            return false;
+        };
+
+        auto selectLocalClusterForTeam = [&](uint8_t teamToSelect, const Engine::ECS::Entity &seed)
+        {
+            clearSelection();
+
+            // Flood-fill (connected component) selection: starting from the seed,
+            // keep adding same-team units that are within a link radius of any selected unit.
+            constexpr float kLinkRadiusM = 14.0f;
+            const float linkR2 = kLinkRadiusM * kLinkRadiusM;
+            constexpr uint32_t kMaxSelect = 2048;
+
+            auto entityKey = [](const Engine::ECS::Entity &e) -> uint64_t
+            {
+                return (static_cast<uint64_t>(e.generation) << 32) | static_cast<uint64_t>(e.index);
+            };
+
+            std::vector<Engine::ECS::Entity> queue;
+            queue.reserve(256);
+            std::vector<Engine::ECS::Entity> selected;
+            selected.reserve(512);
+
+            std::unordered_set<uint64_t> visited;
+            visited.reserve(512);
+
+            queue.push_back(seed);
+            visited.insert(entityKey(seed));
+
+            const auto &spatial = m_systems.GetSpatialIndex();
+
+            while (!queue.empty() && selected.size() < kMaxSelect)
+            {
+                const Engine::ECS::Entity cur = queue.back();
+                queue.pop_back();
+
+                auto *rec = ecs.entities.find(cur);
+                if (!rec)
                     continue;
-                if (!store.signature().has(teamId))
+                auto *st = ecs.stores.get(rec->archetypeId);
+                if (!st || rec->row >= st->size())
                     continue;
-                if (store.signature().has(disabledId) || store.signature().has(deadId))
+                if (!st->hasPosition() || !st->hasTeam() || !st->hasHealth())
+                    continue;
+                if (st->healths()[rec->row].value <= 0.0f)
+                    continue;
+                if (st->teams()[rec->row].id != teamToSelect)
                     continue;
 
-                const auto &teams = store.teams();
-                const auto &ents = store.entities();
-                const uint32_t n = store.size();
-                for (uint32_t row = 0; row < n; ++row)
-                {
-                    if (teams[row].id == teamToSelect)
-                        toSelect.push_back(ents[row]);
-                }
+                // Accept this entity into the selection.
+                selected.push_back(cur);
+
+                const float cx = st->positions()[rec->row].x;
+                const float cz = st->positions()[rec->row].z;
+
+                spatial.forNeighborsInRadius(cx, cz, kLinkRadiusM, [&](uint32_t nStoreId, uint32_t nRow)
+                                             {
+                                                 auto *ns = ecs.stores.get(nStoreId);
+                                                 if (!ns)
+                                                     return;
+                                                 if (nRow >= ns->size())
+                                                     return;
+                                                 if (!ns->hasPosition() || !ns->hasTeam() || !ns->hasHealth())
+                                                     return;
+                                                 if (ns->signature().has(disabledId) || ns->signature().has(deadId))
+                                                     return;
+                                                 if (ns->healths()[nRow].value <= 0.0f)
+                                                     return;
+                                                 if (ns->teams()[nRow].id != teamToSelect)
+                                                     return;
+
+                                                 const float dx = ns->positions()[nRow].x - cx;
+                                                 const float dz = ns->positions()[nRow].z - cz;
+                                                 if (dx * dx + dz * dz > linkR2)
+                                                     return;
+
+                                                 const Engine::ECS::Entity cand = ns->entities()[nRow];
+                                                 const uint64_t k = entityKey(cand);
+                                                 if (visited.insert(k).second)
+                                                     queue.push_back(cand);
+                                             });
             }
-            for (const auto &e : toSelect)
+
+            for (const auto &e : selected)
                 (void)ecs.addTag(e, selectedId);
         };
 
         const bool isEnemy = (playerTeam >= 0 && havePickedTeam && pickedTeam != static_cast<uint8_t>(playerTeam));
         if (!isEnemy)
         {
-            // Friendly group selection
-            selectTeamGroup(pickedTeam);
+            // Friendly group selection (local cluster)
+            selectLocalClusterForTeam(pickedTeam, picked);
         }
         else
         {
-            // Enemy clicked: ensure we have a friendly group selected, then issue an attack-move.
-            if (playerTeam >= 0)
-                selectTeamGroup(static_cast<uint8_t>(playerTeam));
+            // Enemy clicked: keep current selection if any; otherwise select a nearby friendly cluster.
+            if (playerTeam >= 0 && !hasAnySelected())
+            {
+                const uint8_t teamToSelect = static_cast<uint8_t>(playerTeam);
+
+                // Find the closest friendly unit near the clicked enemy as a seed.
+                Engine::ECS::Entity bestSeed{};
+                float bestD2 = std::numeric_limits<float>::infinity();
+
+                constexpr float kSeedSearchRadiusM = 80.0f;
+                const float sx = pickedPos.x;
+                const float sz = pickedPos.z;
+
+                const auto &spatial = m_systems.GetSpatialIndex();
+                spatial.forNeighborsInRadius(sx, sz, kSeedSearchRadiusM, [&](uint32_t nStoreId, uint32_t nRow)
+                                             {
+                                                 auto *ns = ecs.stores.get(nStoreId);
+                                                 if (!ns)
+                                                     return;
+                                                 if (nRow >= ns->size())
+                                                     return;
+                                                 if (!ns->hasPosition() || !ns->hasTeam() || !ns->hasHealth())
+                                                     return;
+                                                 if (ns->signature().has(disabledId) || ns->signature().has(deadId))
+                                                     return;
+                                                 if (ns->healths()[nRow].value <= 0.0f)
+                                                     return;
+                                                 if (ns->teams()[nRow].id != teamToSelect)
+                                                     return;
+
+                                                 const float dx = ns->positions()[nRow].x - sx;
+                                                 const float dz = ns->positions()[nRow].z - sz;
+                                                 const float d2 = dx * dx + dz * dz;
+                                                 if (d2 < bestD2)
+                                                 {
+                                                     bestD2 = d2;
+                                                     bestSeed = ns->entities()[nRow];
+                                                 }
+                                             });
+
+                if (bestSeed.valid())
+                    selectLocalClusterForTeam(teamToSelect, bestSeed);
+            }
 
             // Use existing command pipeline (formation offsets) toward the enemy position.
             m_systems.SetGlobalMoveTarget(pickedPos.x, 0.0f, pickedPos.z);

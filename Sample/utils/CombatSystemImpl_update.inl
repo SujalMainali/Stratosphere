@@ -120,6 +120,8 @@ inline void CombatSystem::update(Engine::ECS::ECSContext &ecs, float dt)
 
     const float meleeRange = std::max(0.0f, m_cfg.meleeRange);
     const float meleeRange2 = meleeRange * meleeRange;
+    const float engageRange = std::max(0.0f, m_cfg.engageRange);
+    const float engageRange2 = engageRange * engageRange;
     const float disengageBuffer = 1.25f; // meters; prevents stop/chase flip-flop near range boundary
     const float disengageRange = meleeRange + disengageBuffer;
     const float disengageRange2 = disengageRange * disengageRange;
@@ -344,16 +346,20 @@ inline void CombatSystem::update(Engine::ECS::ECSContext &ecs, float dt)
 
         if (!bestEnemy.valid())
         {
-            if (!chargeActiveForDecisions)
+            // No enemies exist anywhere. Do not stomp player move targets.
+            // Only stop units that were previously chasing due to combat.
+            if (mem.combatMoveIssued)
             {
                 float yaw = storePtr->facings()[wi.row].yaw;
                 const bool clearVel = (storePtr->moveTargets()[wi.row].active != 0);
                 hasStop[idx] = 1;
                 stopOut[idx] = StopAction{myEntity, yaw, clearVel};
+                mem.combatMoveIssued = false;
             }
 
             mem.targetEnemy = Engine::ECS::Entity{};
             mem.engaged = false;
+            mem.inMelee = false;
             nextMem[idx] = mem;
             return;
         }
@@ -396,16 +402,49 @@ inline void CombatSystem::update(Engine::ECS::ECSContext &ecs, float dt)
 
         mem.targetEnemy = chosenEnemy;
 
+        // Local engagement gating: only units that have an enemy within engageRange
+        // participate in combat (chase/attack). This prevents global-aggro.
+        // Once engaged, allow a small hysteresis so units don't instantly drop combat.
+        const float engageHysteresis = 2.5f; // meters
+        const float disengageEngageRange = std::max(0.0f, engageRange + engageHysteresis);
+        const float disengageEngageRange2 = disengageEngageRange * disengageEngageRange;
+        const bool hasNearbyEnemy = (engageRange > 0.0f) ? (chosenDist2 <= engageRange2) : false;
+        const bool keepEngaged = mem.engaged && (chosenDist2 <= disengageEngageRange2);
+        if (!hasNearbyEnemy && !keepEngaged)
+        {
+            // Not part of any local fight.
+            // If we were previously chasing due to combat, stop that chase now.
+            if (mem.combatMoveIssued)
+            {
+                const float yaw = storePtr->facings()[wi.row].yaw;
+                const bool clearVel = (storePtr->moveTargets()[wi.row].active != 0);
+                hasStop[idx] = 1;
+                stopOut[idx] = StopAction{myEntity, yaw, clearVel};
+                mem.combatMoveIssued = false;
+            }
+
+            mem.targetEnemy = Engine::ECS::Entity{};
+            mem.engaged = false;
+            mem.inMelee = false;
+            nextMem[idx] = mem;
+            return;
+        }
+
         const float dx = chosenEX - myX;
         const float dz = chosenEZ - myZ;
         const float yaw = (dx * dx + dz * dz > CombatTuning::YAW_DIST2_EPS)
                               ? std::atan2(dx, dz)
                               : storePtr->facings()[wi.row].yaw;
 
-        const bool inMelee = mem.engaged ? (chosenDist2 <= disengageRange2) : (chosenDist2 <= meleeRange2);
+        // From here on, unit is considered engaged in combat.
+        mem.engaged = true;
+
+        const bool inMelee = mem.inMelee ? (chosenDist2 <= disengageRange2) : (chosenDist2 <= meleeRange2);
         if (inMelee)
         {
-            mem.engaged = true;
+            // We're fighting in melee range.
+            mem.combatMoveIssued = false;
+            mem.inMelee = true;
 
             const bool clearVel = (storePtr->moveTargets()[wi.row].active != 0);
             hasStop[idx] = 1;
@@ -446,7 +485,8 @@ inline void CombatSystem::update(Engine::ECS::ECSContext &ecs, float dt)
         }
         else
         {
-            mem.engaged = false;
+            // Not in melee yet: chase toward the chosen enemy.
+            mem.inMelee = false;
 
             bool skipChase = false;
             if (chargeActiveForDecisions)
@@ -474,6 +514,7 @@ inline void CombatSystem::update(Engine::ECS::ECSContext &ecs, float dt)
                                           yaw,
                                           CombatAnims::RUN,
                                           anims[wi.row].clipIndex != CombatAnims::RUN};
+                mem.combatMoveIssued = true;
             }
         }
 
