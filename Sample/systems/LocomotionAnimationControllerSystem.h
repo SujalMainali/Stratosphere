@@ -29,6 +29,7 @@ public:
         Engine::ECS::SystemBase::buildMasks(registry);
         m_renderAnimId = registry.ensureId("RenderAnimation");
         m_velocityId = registry.ensureId("Velocity");
+        m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     }
 
     void update(Engine::ECS::ECSContext &ecs, float /*dt*/) override

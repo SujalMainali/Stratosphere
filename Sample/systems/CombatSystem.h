@@ -150,6 +150,29 @@ public:
     int humanTeamId() const { return m_humanTeamId; }
     bool isHumanAttacking() const { return m_humanAttacking; }
 
+    // Reset all runtime battle state (queues, flags, memories) without touching config.
+    void resetBattleState()
+    {
+        m_battleStarted = false;
+        m_chargeActive  = false;
+        m_chargeIssued  = false;
+        m_loggedStart   = false;
+        m_statsDirty    = true;
+        m_battleClickX  = 0.0f;
+        m_battleClickZ  = 0.0f;
+        m_teamStats.clear();
+        m_deathQueue.clear();
+        m_deathQueueSet.clear();
+        m_damages.clear();
+        m_attackAnims.clear();
+        m_damageAnims.clear();
+        m_moves.clear();
+        m_stops.clear();
+        m_newlyDead.clear();
+        m_unitMem.clear();
+        m_frameCounter = 0;
+    }
+
     void setMeleeRange(float range) { m_cfg.meleeRange = range; }
     void setDamagePerHit(float dmg)
     {
@@ -164,6 +187,17 @@ public:
         static const TeamStats empty{};
         auto it = m_teamStats.find(teamId);
         return (it != m_teamStats.end()) ? it->second : empty;
+    }
+
+    void setTeamTotalSpawned(uint8_t teamId, int count)
+    {
+        m_teamStats[teamId].totalSpawned = count;
+        m_teamStats[teamId].maxHP = count * m_cfg.maxHPPerUnit;
+    }
+
+    void setTeamMaxHP(uint8_t teamId, float maxHP)
+    {
+        m_teamStats[teamId].maxHP = maxHP;
     }
 
     void buildMasks(Engine::ECS::ComponentRegistry &registry) override;
