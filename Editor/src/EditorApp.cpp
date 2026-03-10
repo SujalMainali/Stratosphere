@@ -21,12 +21,34 @@
 #include <filesystem>
 #include <iostream>
 #include <sstream>
+#include <cstdio>
 
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <GLFW/glfw3.h>
 
 using json = nlohmann::json;
+
+// -----------------------------------------------------------------------------
+// TUNABLES (ALL_CAPS)
+// -----------------------------------------------------------------------------
+namespace EditorTuning
+{
+    // Hover label placement near cursor.
+    static constexpr float HOVER_LABEL_OFFSET_X_PX = 14.0f;
+    static constexpr float HOVER_LABEL_OFFSET_Y_PX = 10.0f; // applied upward
+    static constexpr float HOVER_LABEL_PAD_X_PX = 6.0f;
+    static constexpr float HOVER_LABEL_PAD_Y_PX = 3.0f;
+    static constexpr float HOVER_LABEL_ROUNDING_PX = 3.0f;
+
+    // Hover label styling.
+    static constexpr ImU32 HOVER_LABEL_BG = IM_COL32(0, 0, 0, 170);
+    static constexpr ImU32 HOVER_LABEL_BORDER = IM_COL32(255, 255, 255, 60);
+    static constexpr ImU32 HOVER_LABEL_TEXT = IM_COL32(235, 235, 235, 230);
+
+    // Numerical formatting.
+    static constexpr int HOVER_LABEL_DECIMALS = 2;
+}
 
 EditorApp::EditorApp(std::string battleConfigPath)
     : Engine::Application(),
@@ -196,29 +218,108 @@ void EditorApp::OnRender()
     auto &ecs = GetECS();
     m_configEditor.draw(ecs);
 
-    if (!m_showEntityEditor)
-        return;
-
     ImGuiIO &io = ImGui::GetIO();
-    const float panelWidth = 520.0f;
-    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(panelWidth, io.DisplaySize.y), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowBgAlpha(0.78f);
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
-    ImGui::Begin("Editor: Entity Types", nullptr, flags);
-
-    Editor::EntityTypeEditor::Callbacks cb;
-    cb.reloadPrefabsAndRespawn = [](void *user)
+    if (m_showEntityEditor)
     {
-        auto *self = static_cast<EditorApp *>(user);
-        self->reloadPrefabsAndRespawnWorld();
-    };
-    cb.user = this;
+        const float panelWidth = 520.0f;
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(panelWidth, io.DisplaySize.y), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowBgAlpha(0.78f);
 
-    m_entityEditor.draw(ecs, *m_assets, cb);
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+        ImGui::Begin("Editor: Entity Types", nullptr, flags);
 
-    ImGui::End();
+        Editor::EntityTypeEditor::Callbacks cb;
+        cb.reloadPrefabsAndRespawn = [](void *user)
+        {
+            auto *self = static_cast<EditorApp *>(user);
+            self->reloadPrefabsAndRespawnWorld();
+        };
+        cb.user = this;
+
+        m_entityEditor.draw(ecs, *m_assets, cb);
+        ImGui::End();
+    }
+
+    // ---------------------------------------------------------------------
+    // Hover world-position label (ground plane X,Z)
+    // - Follows mouse and sits slightly above it
+    // - Does NOT appear when hovering over editor GUI panels
+    // ---------------------------------------------------------------------
+    if (!io.WantCaptureMouse)
+    {
+        const ImVec2 mp = io.MousePos;
+        if (mp.x >= 0.0f && mp.y >= 0.0f && mp.x <= io.DisplaySize.x && mp.y <= io.DisplaySize.y)
+        {
+            const float mouseX = mp.x;
+            const float mouseY = mp.y;
+            const float width = io.DisplaySize.x;
+            const float height = io.DisplaySize.y;
+
+            // Convert mouse coords to NDC (matching the Sample app's unprojection convention).
+            const float ndcX = (mouseX / width) * 2.0f - 1.0f;
+            const float ndcY = (mouseY / height) * 2.0f - 1.0f;
+
+            const glm::mat4 view = m_camera.GetViewMatrix();
+            const glm::mat4 proj = m_camera.GetProjectionMatrix();
+            const glm::mat4 invVP = glm::inverse(proj * view);
+
+            const glm::vec4 nearClip(ndcX, ndcY, 0.0f, 1.0f);
+            const glm::vec4 farClip(ndcX, ndcY, 1.0f, 1.0f);
+
+            glm::vec4 nearWorld = invVP * nearClip;
+            glm::vec4 farWorld = invVP * farClip;
+            if (std::abs(nearWorld.w) > 1e-6f)
+                nearWorld /= nearWorld.w;
+            if (std::abs(farWorld.w) > 1e-6f)
+                farWorld /= farWorld.w;
+
+            const glm::vec3 rayOrigin(nearWorld);
+            const glm::vec3 rayDir = glm::normalize(glm::vec3(farWorld) - glm::vec3(nearWorld));
+
+            // Intersect with ground plane at Y=0.
+            if (std::abs(rayDir.y) > 1e-6f)
+            {
+                const float t = -rayOrigin.y / rayDir.y;
+                if (t > 0.0f)
+                {
+                    const glm::vec3 hit = rayOrigin + t * rayDir;
+
+                    char buf[96];
+                    if (EditorTuning::HOVER_LABEL_DECIMALS == 0)
+                        std::snprintf(buf, sizeof(buf), "X: %.0f  Z: %.0f", hit.x, hit.z);
+                    else if (EditorTuning::HOVER_LABEL_DECIMALS == 1)
+                        std::snprintf(buf, sizeof(buf), "X: %.1f  Z: %.1f", hit.x, hit.z);
+                    else if (EditorTuning::HOVER_LABEL_DECIMALS == 3)
+                        std::snprintf(buf, sizeof(buf), "X: %.3f  Z: %.3f", hit.x, hit.z);
+                    else
+                        std::snprintf(buf, sizeof(buf), "X: %.2f  Z: %.2f", hit.x, hit.z);
+
+                    const ImVec2 ts = ImGui::CalcTextSize(buf);
+                    ImVec2 tl;
+                    tl.x = mp.x + EditorTuning::HOVER_LABEL_OFFSET_X_PX;
+                    tl.y = mp.y - EditorTuning::HOVER_LABEL_OFFSET_Y_PX - ts.y;
+                    const ImVec2 br(tl.x + ts.x + EditorTuning::HOVER_LABEL_PAD_X_PX * 2.0f,
+                                    tl.y + ts.y + EditorTuning::HOVER_LABEL_PAD_Y_PX * 2.0f);
+
+                    // Clamp horizontally so it stays on-screen.
+                    if (br.x > io.DisplaySize.x)
+                        tl.x = std::max(0.0f, io.DisplaySize.x - (ts.x + EditorTuning::HOVER_LABEL_PAD_X_PX * 2.0f));
+                    if (tl.y < 0.0f)
+                        tl.y = 0.0f;
+
+                    ImDrawList *fg = ImGui::GetForegroundDrawList();
+                    const ImVec2 bgBR(tl.x + ts.x + EditorTuning::HOVER_LABEL_PAD_X_PX * 2.0f,
+                                      tl.y + ts.y + EditorTuning::HOVER_LABEL_PAD_Y_PX * 2.0f);
+                    fg->AddRectFilled(tl, bgBR, EditorTuning::HOVER_LABEL_BG, EditorTuning::HOVER_LABEL_ROUNDING_PX);
+                    fg->AddRect(tl, bgBR, EditorTuning::HOVER_LABEL_BORDER, EditorTuning::HOVER_LABEL_ROUNDING_PX);
+                    fg->AddText(ImVec2(tl.x + EditorTuning::HOVER_LABEL_PAD_X_PX, tl.y + EditorTuning::HOVER_LABEL_PAD_Y_PX),
+                                EditorTuning::HOVER_LABEL_TEXT, buf);
+                }
+            }
+        }
+    }
 }
 
 void EditorApp::setupECSFromPrefabs()
