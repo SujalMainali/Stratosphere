@@ -118,7 +118,7 @@ EditorApp::EditorApp(std::string battleConfigPath)
             m_groundPass->setAssets(m_assets.get());
             m_groundPass->setCamera(&m_camera);
             m_groundPass->setBaseColorTexture(m_groundTexture);
-            m_groundPass->setHalfSize(350.0f);
+            m_groundPass->setHalfSize(1000.0f);
             m_groundPass->setTileWorldSize(5.0f);
             m_groundPass->setEnabled(true);
             GetRenderer().registerPass(m_groundPass);

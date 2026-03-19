@@ -22,6 +22,9 @@ namespace Engine::ECS
 
         uint32_t transformVersion = 0;
         uint32_t poseVersion = 0;
+
+        uint32_t visibleFrame = 0;
+        bool justBecameVisible = false;
     };
 
     struct VisibleModelBucket

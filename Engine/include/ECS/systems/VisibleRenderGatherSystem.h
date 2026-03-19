@@ -94,6 +94,8 @@ public:
                 ref.modelKey = key;
                 ref.transformVersion = renderTransforms[row].transformVersion;
                 ref.poseVersion = posePalettes[row].poseVersion;
+                ref.visibleFrame = visibilityStates[row].visibleFrame;
+                ref.justBecameVisible = !visibilityStates[row].wasVisibleLastFrame;
 
                 bucket.refs.emplace_back(ref);
                 m_buckets.visibleRenderables += 1u;
