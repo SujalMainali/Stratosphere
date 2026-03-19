@@ -30,16 +30,6 @@ namespace Engine
     class PerformanceMonitor
     {
     public:
-        struct MainLoopTimings
-        {
-            float pollEventsMs = 0.0f;
-            float imguiBeginMs = 0.0f;
-            float appUpdateMs = 0.0f;
-            float appRenderMs = 0.0f;
-            float imguiEndMs = 0.0f;
-            float drawFrameTotalMs = 0.0f;
-        };
-
         PerformanceMonitor();
         ~PerformanceMonitor();
 
@@ -104,14 +94,8 @@ namespace Engine
          */
         void renderOverlay();
 
-        // Optional: main-loop stage timing breakdown (set by Application).
-        void setMainLoopTimings(const MainLoopTimings &timings) { m_mainLoopTimings = timings; }
-        const MainLoopTimings &getMainLoopTimings() const { return m_mainLoopTimings; }
-
         // Getters for current metrics
         float getAverageFPS() const { return m_avgFPS; }
-        float get1PercentLowFPS() const { return m_1percentLowFPS; }
-        float get01PercentLowFPS() const { return m_01percentLowFPS; }
         float getFrameTimeMs() const { return m_frameTimeMs; }
         float getCPUTimeMs() const { return m_cpuTimeMs; }
         float getVramUsedMB() const { return m_vramUsedMB; }
@@ -125,7 +109,6 @@ namespace Engine
 
     private:
         void updateMetrics();
-        void calculatePercentileFPS();
         void querySystemInfo();     // One-time GPU name, total VRAM
         void updateSystemMetrics(); // Per-frame VRAM used, CPU %, RAM
         void queryVramViaVulkan();  // Cross-platform VRAM via VK_EXT_memory_budget
@@ -156,8 +139,6 @@ namespace Engine
 
         // Current metrics (raw values)
         float m_avgFPS = 0.0f;
-        float m_1percentLowFPS = 0.0f;
-        float m_01percentLowFPS = 0.0f;
         float m_frameTimeMs = 0.0f;
         float m_cpuTimeMs = 0.0f;
         float m_gpuTimeMs = 0.0f;       // Placeholder - requires GPU timestamp queries
@@ -212,8 +193,6 @@ namespace Engine
         std::vector<std::string> m_ecsSystemDisplayOrder;
         std::unordered_map<std::string, size_t> m_ecsSystemDisplayIndex;
 #endif
-
-        MainLoopTimings m_mainLoopTimings{};
     };
 
     /**

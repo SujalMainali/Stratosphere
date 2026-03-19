@@ -28,14 +28,29 @@ target_include_directories(EditorApp PRIVATE
 # Runtime data next to the executable (mirrors SampleApp)
 # ------------------------------------------------------------
 
-# Copy SPIR-V shaders to runtime output dir (expects Engine/shaders/*.spv present)
-file(GLOB SHADER_SPV ${CMAKE_SOURCE_DIR}/Engine/shaders/*.spv)
+# Copy SPIR-V shaders next to the executable.
+# Note: POST_BUILD only runs when the target relinks; shader-only changes can update
+# Engine/shaders/*.spv without relinking EditorApp, leaving stale runtime shaders.
+# Fix: always run a lightweight copy step as a build dependency.
+file(GLOB SHADER_SPV CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/Engine/shaders/*.spv)
+
+add_custom_target(CopyEditorShaders
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:EditorApp>/shaders
+    DEPENDS ${SHADER_SPV}
+    COMMENT "Syncing SPIR-V shaders to EditorApp runtime output"
+)
+
+if (TARGET EngineShaders)
+    add_dependencies(CopyEditorShaders EngineShaders)
+endif()
+
 foreach(SPIRV ${SHADER_SPV})
-    add_custom_command(TARGET EditorApp POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:EditorApp>/shaders
+    add_custom_command(TARGET CopyEditorShaders
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SPIRV} $<TARGET_FILE_DIR:EditorApp>/shaders/
     )
 endforeach()
+
+add_dependencies(EditorApp CopyEditorShaders)
 
 # Copy editor GameWorld next to the executable.
 add_custom_command(TARGET EditorApp POST_BUILD

@@ -40,9 +40,6 @@ namespace Engine
         if (!createCameraResources(ctx, frameCount))
             throw std::runtime_error("GroundPlaneRenderPassModule: failed to create camera resources");
 
-        if (!createInstanceResources(ctx, frameCount))
-            throw std::runtime_error("GroundPlaneRenderPassModule: failed to create instance resources");
-
         if (!createMaterialResources(ctx, frameCount))
             throw std::runtime_error("GroundPlaneRenderPassModule: failed to create material resources");
 
@@ -72,17 +69,13 @@ namespace Engine
 
         pci.shaderStages = {vs, fs};
 
-        // Vertex input matches SModelRenderPassModule (VertexPNTTJW)
-        std::array<VkVertexInputBindingDescription, 2> bindingDescs{};
+        // Vertex input matches SModelRenderPassModule (VertexPNTTJW). Instance data comes from SSBOs.
+        std::array<VkVertexInputBindingDescription, 1> bindingDescs{};
         bindingDescs[0].binding = 0;
         bindingDescs[0].stride = 72;
         bindingDescs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        bindingDescs[1].binding = 1;
-        bindingDescs[1].stride = sizeof(glm::mat4);
-        bindingDescs[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
-
-        std::array<VkVertexInputAttributeDescription, 10> attrs{};
+        std::array<VkVertexInputAttributeDescription, 6> attrs{};
         attrs[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
         attrs[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12};
         attrs[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, 24};
@@ -91,11 +84,6 @@ namespace Engine
         // Skinning inputs (unused for ground, but required by smodel.vert interface)
         attrs[4] = {8, 0, VK_FORMAT_R16G16B16A16_UINT, 48};
         attrs[5] = {9, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 56};
-
-        attrs[6] = {4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0};
-        attrs[7] = {5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16};
-        attrs[8] = {6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32};
-        attrs[9] = {7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48};
 
         VkPipelineVertexInputStateCreateInfo vi{};
         vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -171,7 +159,6 @@ namespace Engine
 
         destroyGeometryResources();
         destroyMaterialResources();
-        destroyInstanceResources();
         destroyCameraResources();
 
         m_device = VK_NULL_HANDLE;
@@ -203,10 +190,22 @@ namespace Engine
         jointPaletteBinding.descriptorCount = 1;
         jointPaletteBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+        VkDescriptorSetLayoutBinding instanceWorldBinding{};
+        instanceWorldBinding.binding = 3;
+        instanceWorldBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        instanceWorldBinding.descriptorCount = 1;
+        instanceWorldBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+        VkDescriptorSetLayoutBinding activeSlotsBinding{};
+        activeSlotsBinding.binding = 4;
+        activeSlotsBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        activeSlotsBinding.descriptorCount = 1;
+        activeSlotsBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
         VkDescriptorSetLayoutCreateInfo dsl{};
         dsl.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        VkDescriptorSetLayoutBinding bindings[3] = {camBinding, paletteBinding, jointPaletteBinding};
-        dsl.bindingCount = 3;
+        VkDescriptorSetLayoutBinding bindings[5] = {camBinding, paletteBinding, jointPaletteBinding, instanceWorldBinding, activeSlotsBinding};
+        dsl.bindingCount = 5;
         dsl.pBindings = bindings;
 
         if (vkCreateDescriptorSetLayout(ctx.GetDevice(), &dsl, nullptr, &m_cameraSetLayout) != VK_SUCCESS)
@@ -216,7 +215,7 @@ namespace Engine
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         poolSizes[0].descriptorCount = static_cast<uint32_t>(frameCount);
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[1].descriptorCount = static_cast<uint32_t>(frameCount) * 2u; // node palette + joint palette
+        poolSizes[1].descriptorCount = static_cast<uint32_t>(frameCount) * 4u; // node palette + joint palette + instance worlds + active slots
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -349,6 +348,80 @@ namespace Engine
                 std::memcpy(cf.jointPaletteMapped, &I, sizeof(glm::mat4));
             }
 
+            // Instance world SSBO: single slot (identity) to satisfy smodel.vert.
+            cf.instanceWorldCapacitySlots = 1;
+            VkBufferCreateInfo iwinfo{};
+            iwinfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            iwinfo.size = static_cast<VkDeviceSize>(cf.instanceWorldCapacitySlots) * sizeof(glm::mat4);
+            iwinfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            iwinfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            if (vkCreateBuffer(ctx.GetDevice(), &iwinfo, nullptr, &cf.instanceWorldBuffer) != VK_SUCCESS)
+                return false;
+
+            VkMemoryRequirements iwMemReq{};
+            vkGetBufferMemoryRequirements(ctx.GetDevice(), cf.instanceWorldBuffer, &iwMemReq);
+
+            VkMemoryAllocateInfo iwMai{};
+            iwMai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            iwMai.allocationSize = iwMemReq.size;
+            uint32_t iwMemType = 0;
+            if (!findMemoryType(ctx.GetPhysicalDevice(), iwMemReq.memoryTypeBits,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, iwMemType))
+                return false;
+            iwMai.memoryTypeIndex = iwMemType;
+
+            if (vkAllocateMemory(ctx.GetDevice(), &iwMai, nullptr, &cf.instanceWorldMemory) != VK_SUCCESS)
+                return false;
+
+            vkBindBufferMemory(ctx.GetDevice(), cf.instanceWorldBuffer, cf.instanceWorldMemory, 0);
+
+            cf.instanceWorldMapped = nullptr;
+            if (vkMapMemory(ctx.GetDevice(), cf.instanceWorldMemory, 0, VK_WHOLE_SIZE, 0, &cf.instanceWorldMapped) != VK_SUCCESS)
+                return false;
+            if (cf.instanceWorldMapped)
+            {
+                const glm::mat4 I(1.0f);
+                std::memcpy(cf.instanceWorldMapped, &I, sizeof(glm::mat4));
+            }
+
+            // Active slots SSBO: one entry mapping instance 0 -> slot 0.
+            cf.activeSlotsCapacity = 1;
+            VkBufferCreateInfo asInfo{};
+            asInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            asInfo.size = static_cast<VkDeviceSize>(cf.activeSlotsCapacity) * sizeof(uint32_t);
+            asInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            asInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            if (vkCreateBuffer(ctx.GetDevice(), &asInfo, nullptr, &cf.activeSlotsBuffer) != VK_SUCCESS)
+                return false;
+
+            VkMemoryRequirements asMemReq{};
+            vkGetBufferMemoryRequirements(ctx.GetDevice(), cf.activeSlotsBuffer, &asMemReq);
+
+            VkMemoryAllocateInfo asMai{};
+            asMai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            asMai.allocationSize = asMemReq.size;
+            uint32_t asMemType = 0;
+            if (!findMemoryType(ctx.GetPhysicalDevice(), asMemReq.memoryTypeBits,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, asMemType))
+                return false;
+            asMai.memoryTypeIndex = asMemType;
+
+            if (vkAllocateMemory(ctx.GetDevice(), &asMai, nullptr, &cf.activeSlotsMemory) != VK_SUCCESS)
+                return false;
+
+            vkBindBufferMemory(ctx.GetDevice(), cf.activeSlotsBuffer, cf.activeSlotsMemory, 0);
+
+            cf.activeSlotsMapped = nullptr;
+            if (vkMapMemory(ctx.GetDevice(), cf.activeSlotsMemory, 0, VK_WHOLE_SIZE, 0, &cf.activeSlotsMapped) != VK_SUCCESS)
+                return false;
+            if (cf.activeSlotsMapped)
+            {
+                const uint32_t slot = 0;
+                std::memcpy(cf.activeSlotsMapped, &slot, sizeof(uint32_t));
+            }
+
             VkDescriptorBufferInfo dbi{};
             dbi.buffer = cf.buffer;
             dbi.offset = 0;
@@ -364,7 +437,17 @@ namespace Engine
             jbi.offset = 0;
             jbi.range = static_cast<VkDeviceSize>(cf.jointPaletteCapacityMatrices) * sizeof(glm::mat4);
 
-            VkWriteDescriptorSet writes[3]{};
+            VkDescriptorBufferInfo iwbi{};
+            iwbi.buffer = cf.instanceWorldBuffer;
+            iwbi.offset = 0;
+            iwbi.range = static_cast<VkDeviceSize>(cf.instanceWorldCapacitySlots) * sizeof(glm::mat4);
+
+            VkDescriptorBufferInfo asbi{};
+            asbi.buffer = cf.activeSlotsBuffer;
+            asbi.offset = 0;
+            asbi.range = static_cast<VkDeviceSize>(cf.activeSlotsCapacity) * sizeof(uint32_t);
+
+            VkWriteDescriptorSet writes[5]{};
             writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[0].dstSet = cf.set;
             writes[0].dstBinding = 0;
@@ -386,7 +469,21 @@ namespace Engine
             writes[2].descriptorCount = 1;
             writes[2].pBufferInfo = &jbi;
 
-            vkUpdateDescriptorSets(ctx.GetDevice(), 3, writes, 0, nullptr);
+            writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[3].dstSet = cf.set;
+            writes[3].dstBinding = 3;
+            writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[3].descriptorCount = 1;
+            writes[3].pBufferInfo = &iwbi;
+
+            writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[4].dstSet = cf.set;
+            writes[4].dstBinding = 4;
+            writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[4].descriptorCount = 1;
+            writes[4].pBufferInfo = &asbi;
+
+            vkUpdateDescriptorSets(ctx.GetDevice(), 5, writes, 0, nullptr);
         }
 
         return true;
@@ -396,6 +493,40 @@ namespace Engine
     {
         for (auto &cf : m_cameraFrames)
         {
+            if (cf.activeSlotsMapped && cf.activeSlotsMemory != VK_NULL_HANDLE)
+            {
+                vkUnmapMemory(m_device, cf.activeSlotsMemory);
+                cf.activeSlotsMapped = nullptr;
+            }
+            if (cf.activeSlotsBuffer != VK_NULL_HANDLE)
+            {
+                vkDestroyBuffer(m_device, cf.activeSlotsBuffer, nullptr);
+                cf.activeSlotsBuffer = VK_NULL_HANDLE;
+            }
+            if (cf.activeSlotsMemory != VK_NULL_HANDLE)
+            {
+                vkFreeMemory(m_device, cf.activeSlotsMemory, nullptr);
+                cf.activeSlotsMemory = VK_NULL_HANDLE;
+            }
+            cf.activeSlotsCapacity = 0;
+
+            if (cf.instanceWorldMapped && cf.instanceWorldMemory != VK_NULL_HANDLE)
+            {
+                vkUnmapMemory(m_device, cf.instanceWorldMemory);
+                cf.instanceWorldMapped = nullptr;
+            }
+            if (cf.instanceWorldBuffer != VK_NULL_HANDLE)
+            {
+                vkDestroyBuffer(m_device, cf.instanceWorldBuffer, nullptr);
+                cf.instanceWorldBuffer = VK_NULL_HANDLE;
+            }
+            if (cf.instanceWorldMemory != VK_NULL_HANDLE)
+            {
+                vkFreeMemory(m_device, cf.instanceWorldMemory, nullptr);
+                cf.instanceWorldMemory = VK_NULL_HANDLE;
+            }
+            cf.instanceWorldCapacitySlots = 0;
+
             if (cf.jointPaletteMapped && cf.jointPaletteMemory != VK_NULL_HANDLE)
             {
                 vkUnmapMemory(m_device, cf.jointPaletteMemory);
@@ -454,78 +585,6 @@ namespace Engine
             vkDestroyDescriptorSetLayout(m_device, m_cameraSetLayout, nullptr);
             m_cameraSetLayout = VK_NULL_HANDLE;
         }
-    }
-
-    bool GroundPlaneRenderPassModule::createInstanceResources(VulkanContext &ctx, size_t frameCount)
-    {
-        destroyInstanceResources();
-        if (frameCount == 0)
-            frameCount = 1;
-
-        m_instanceFrames.resize(frameCount);
-
-        const VkDeviceSize bufSize = sizeof(glm::mat4);
-        for (size_t i = 0; i < frameCount; ++i)
-        {
-            InstanceFrame &fr = m_instanceFrames[i];
-
-            VkBufferCreateInfo binfo{};
-            binfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            binfo.size = bufSize;
-            binfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-            binfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-            if (vkCreateBuffer(ctx.GetDevice(), &binfo, nullptr, &fr.buffer) != VK_SUCCESS)
-                return false;
-
-            VkMemoryRequirements memReq{};
-            vkGetBufferMemoryRequirements(ctx.GetDevice(), fr.buffer, &memReq);
-
-            VkMemoryAllocateInfo mai{};
-            mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-            mai.allocationSize = memReq.size;
-            uint32_t memType = 0;
-            if (!findMemoryType(ctx.GetPhysicalDevice(), memReq.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memType))
-                return false;
-            mai.memoryTypeIndex = memType;
-
-            if (vkAllocateMemory(ctx.GetDevice(), &mai, nullptr, &fr.memory) != VK_SUCCESS)
-                return false;
-
-            vkBindBufferMemory(ctx.GetDevice(), fr.buffer, fr.memory, 0);
-
-            fr.mapped = nullptr;
-            if (vkMapMemory(ctx.GetDevice(), fr.memory, 0, VK_WHOLE_SIZE, 0, &fr.mapped) != VK_SUCCESS)
-                return false;
-        }
-
-        return true;
-    }
-
-    void GroundPlaneRenderPassModule::destroyInstanceResources()
-    {
-        if (m_device == VK_NULL_HANDLE)
-            return;
-
-        for (auto &fr : m_instanceFrames)
-        {
-            if (fr.mapped && fr.memory != VK_NULL_HANDLE)
-            {
-                vkUnmapMemory(m_device, fr.memory);
-                fr.mapped = nullptr;
-            }
-            if (fr.buffer != VK_NULL_HANDLE)
-            {
-                vkDestroyBuffer(m_device, fr.buffer, nullptr);
-                fr.buffer = VK_NULL_HANDLE;
-            }
-            if (fr.memory != VK_NULL_HANDLE)
-            {
-                vkFreeMemory(m_device, fr.memory, nullptr);
-                fr.memory = VK_NULL_HANDLE;
-            }
-        }
-        m_instanceFrames.clear();
     }
 
     bool GroundPlaneRenderPassModule::createMaterialResources(VulkanContext &ctx, size_t frameCount)
@@ -740,14 +799,6 @@ namespace Engine
             }
         }
 
-        // Update per-frame instance transform (identity)
-        const uint32_t instIndex = (!m_instanceFrames.empty()) ? (frameCtx.frameIndex % static_cast<uint32_t>(m_instanceFrames.size())) : 0;
-        InstanceFrame *instFrame = (!m_instanceFrames.empty()) ? &m_instanceFrames[instIndex] : nullptr;
-        if (!instFrame || !instFrame->mapped)
-            return;
-        const glm::mat4 I(1.0f);
-        std::memcpy(instFrame->mapped, &I, sizeof(glm::mat4));
-
         // Update plane vertices (centered around camera; UVs in world-space)
         updatePlaneForFrame(frameCtx.frameIndex);
 
@@ -766,9 +817,9 @@ namespace Engine
         vkCmdPushConstants(cmd, m_pipeline.getLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &m_pc);
 
         const uint32_t vbIndex = frameCtx.frameIndex % static_cast<uint32_t>(m_planeVB.size());
-        VkBuffer vbs[2] = {m_planeVB[vbIndex].buffer, instFrame->buffer};
-        VkDeviceSize offs[2] = {0, 0};
-        vkCmdBindVertexBuffers(cmd, 0, 2, vbs, offs);
+        VkBuffer vbs[1] = {m_planeVB[vbIndex].buffer};
+        VkDeviceSize offs[1] = {0};
+        vkCmdBindVertexBuffers(cmd, 0, 1, vbs, offs);
         vkCmdBindIndexBuffer(cmd, m_planeIB.buffer, 0, VK_INDEX_TYPE_UINT16);
         vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
         DrawCallCounter::increment();

@@ -245,6 +245,25 @@ static uint32_t DefaultFilterLinear() { return 1; }
 static uint32_t DefaultMipNone() { return 0; }
 
 // ------------------------------------------------------------
+// Query which UV channel a texture uses.
+// In glTF this corresponds to the textureInfo.texCoord field.
+// Assimp exposes it via AI_MATKEY_UVWSRC(textureType, textureIndex).
+// ------------------------------------------------------------
+static uint32_t GetTextureUVSource(aiMaterial *mat, aiTextureType type, uint32_t defaultUv = 0)
+{
+    if (!mat)
+        return defaultUv;
+
+    int uvsrc = static_cast<int>(defaultUv);
+    if (AI_SUCCESS == mat->Get(AI_MATKEY_UVWSRC(type, 0), uvsrc))
+    {
+        if (uvsrc >= 0)
+            return static_cast<uint32_t>(uvsrc);
+    }
+    return defaultUv;
+}
+
+// ------------------------------------------------------------
 // Robust material texture query helper
 // Attempts multiple assimp texture types when needed.
 // ------------------------------------------------------------
@@ -480,6 +499,7 @@ int main(int argc, char **argv)
         aiProcess_Triangulate |
         aiProcess_GenNormals |
         aiProcess_CalcTangentSpace |
+        aiProcess_FlipUVs |
         aiProcess_JoinIdenticalVertices |
         aiProcess_ImproveCacheLocality |
         aiProcess_LimitBoneWeights |
@@ -722,7 +742,7 @@ int main(int argc, char **argv)
         // ------------------------------------------------------------
         // Textures: robust extraction
         // ------------------------------------------------------------
-        auto AssignTextureIfPresent = [&](aiTextureType type, bool srgb, int32_t &outIndex)
+        auto AssignTextureIfPresent = [&](aiTextureType type, bool srgb, int32_t &outIndex, uint32_t &outTexCoord)
         {
             aiString texPath;
             if (!TryGetTexture(mat, type, texPath))
@@ -730,14 +750,16 @@ int main(int argc, char **argv)
 
             const std::string p = NormalizePathSlashes(texPath.C_Str());
             outIndex = AcquireTextureIndex(p, srgb, mat, type);
+            outTexCoord = GetTextureUVSource(mat, type, outTexCoord);
         };
 
         // glTF PBR
-        AssignTextureIfPresent(aiTextureType_BASE_COLOR, true, mr.baseColorTexture);
+        AssignTextureIfPresent(aiTextureType_BASE_COLOR, true, mr.baseColorTexture, mr.baseColorTexCoord);
         // Some Assimp versions/materials map baseColor to DIFFUSE.
         if (mr.baseColorTexture < 0)
-            AssignTextureIfPresent(aiTextureType_DIFFUSE, true, mr.baseColorTexture);
-        AssignTextureIfPresent(aiTextureType_NORMALS, false, mr.normalTexture);
+            AssignTextureIfPresent(aiTextureType_DIFFUSE, true, mr.baseColorTexture, mr.baseColorTexCoord);
+
+        AssignTextureIfPresent(aiTextureType_NORMALS, false, mr.normalTexture, mr.normalTexCoord);
 
         // Metallic-roughness is not always mapped consistently in Assimp depending on version.
         // We try a couple of candidates.
@@ -746,18 +768,20 @@ int main(int argc, char **argv)
             if (TryGetTexture(mat, aiTextureType_METALNESS, p))
             {
                 mr.metallicRoughnessTexture = AcquireTextureIndex(NormalizePathSlashes(p.C_Str()), false, mat, aiTextureType_METALNESS);
+                mr.metallicRoughnessTexCoord = GetTextureUVSource(mat, aiTextureType_METALNESS, mr.metallicRoughnessTexCoord);
             }
             else if (TryGetTexture(mat, aiTextureType_DIFFUSE_ROUGHNESS, p))
             {
                 mr.metallicRoughnessTexture = AcquireTextureIndex(NormalizePathSlashes(p.C_Str()), false, mat, aiTextureType_DIFFUSE_ROUGHNESS);
+                mr.metallicRoughnessTexCoord = GetTextureUVSource(mat, aiTextureType_DIFFUSE_ROUGHNESS, mr.metallicRoughnessTexCoord);
             }
         }
 
         // Occlusion
-        AssignTextureIfPresent(aiTextureType_AMBIENT_OCCLUSION, false, mr.occlusionTexture);
+        AssignTextureIfPresent(aiTextureType_AMBIENT_OCCLUSION, false, mr.occlusionTexture, mr.occlusionTexCoord);
 
         // Emissive
-        AssignTextureIfPresent(aiTextureType_EMISSIVE, true, mr.emissiveTexture);
+        AssignTextureIfPresent(aiTextureType_EMISSIVE, true, mr.emissiveTexture, mr.emissiveTexCoord);
 
         materialRecords[mi] = mr;
     }
@@ -777,6 +801,12 @@ int main(int argc, char **argv)
         const aiMesh *mesh = scene->mMeshes[meshIdx];
         if (!mesh)
             continue;
+
+        // We only store a single UV set in the fixed VertexPNTTJW format.
+        // Bake the material's selected baseColor texCoord set into uv0.
+        uint32_t uvChannel = 0;
+        if (mesh->mMaterialIndex < materialRecords.size())
+            uvChannel = materialRecords[mesh->mMaterialIndex].baseColorTexCoord;
 
         int32_t skinIndex = -1;
 
@@ -864,10 +894,10 @@ int main(int argc, char **argv)
             }
 
             // UV0
-            if (mesh->HasTextureCoords(0))
+            if (mesh->HasTextureCoords(uvChannel))
             {
-                v.uv0[0] = mesh->mTextureCoords[0][vi].x;
-                v.uv0[1] = mesh->mTextureCoords[0][vi].y;
+                v.uv0[0] = mesh->mTextureCoords[uvChannel][vi].x;
+                v.uv0[1] = mesh->mTextureCoords[uvChannel][vi].y;
             }
             else
             {

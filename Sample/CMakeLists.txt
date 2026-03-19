@@ -138,14 +138,29 @@ endif()
 
 ## NOTE: Copying SMODEL assets is handled by the CopySampleSMODELAssets target above.
 
-# Copy SPIR-V shaders to runtime output dir (expects Engine/Shaders/*.spv present)
-file(GLOB SHADER_SPV ${CMAKE_SOURCE_DIR}/Engine/shaders/*.spv)
+# Copy SPIR-V shaders next to the executable.
+# Note: POST_BUILD only runs when the target relinks; shader-only changes can update
+# Engine/shaders/*.spv without relinking SampleApp, leaving stale runtime shaders.
+# Fix: always run a lightweight copy step as a build dependency.
+file(GLOB SHADER_SPV CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/Engine/shaders/*.spv)
+
+add_custom_target(CopySampleShaders
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:SampleApp>/shaders
+    DEPENDS ${SHADER_SPV}
+    COMMENT "Syncing SPIR-V shaders to SampleApp runtime output"
+)
+
+if (TARGET EngineShaders)
+    add_dependencies(CopySampleShaders EngineShaders)
+endif()
+
 foreach(SPIRV ${SHADER_SPV})
-    add_custom_command(TARGET SampleApp POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:SampleApp>/shaders
+    add_custom_command(TARGET CopySampleShaders
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SPIRV} $<TARGET_FILE_DIR:SampleApp>/shaders/
     )
 endforeach()
+
+add_dependencies(SampleApp CopySampleShaders)
 
 # Copy scenario definition next to the executable.
 add_custom_command(TARGET SampleApp POST_BUILD

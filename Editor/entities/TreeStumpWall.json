@@ -6,7 +6,10 @@
         "RenderMesh",
         "Facing",
         "RenderModel",
-        "RenderAnimation"
+        "RenderAnimation",
+        "RenderBounds",
+        "VisibilityState",
+        "RenderScale"
     ],
     "defaults": {
         "Facing": {
@@ -24,6 +27,9 @@
         "RenderAnimation": {
             "clipIndex": 0,
             "playing": false
+        },
+        "RenderScale": {
+            "uniform": 1.0
         }
     },
     "name": "TreeStumpWall",

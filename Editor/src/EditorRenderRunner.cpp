@@ -24,6 +24,7 @@ namespace Editor
     void EditorRenderRunner::SetCamera(Engine::Camera *camera)
     {
         m_render.setCamera(camera);
+        m_visibilityCulling.setCamera(camera);
     }
 
     void EditorRenderRunner::Initialize(Engine::ECS::ECSContext &ecs)
@@ -36,9 +37,14 @@ namespace Editor
         auto &registry = ecs.components;
 
         m_renderTransform.buildMasks(registry);
+        m_renderBoundsUpdate.buildMasks(registry);
+        m_visibilityCulling.buildMasks(registry);
         m_animPlayback.buildMasks(registry);
         m_poseUpdate.buildMasks(registry);
+        m_visibleRenderGather.buildMasks(registry);
         m_render.buildMasks(registry);
+
+        m_render.setVisibleBuckets(&m_visibleRenderGather.buckets());
 
         m_initialized = true;
     }
@@ -52,11 +58,18 @@ namespace Editor
         // We still update render transforms + pose + render batches.
         m_renderTransform.update(ecs, 0.0f);
 
+        // Update world bounds from render transform
+        m_renderBoundsUpdate.update(ecs, 0.0f);
+
+        // Cull based on editor camera
+        m_visibilityCulling.update(ecs, 0.0f);
+
         // Allow optional animation playback when dt>0.
         if (dtSeconds > 0.0f)
             m_animPlayback.update(ecs, dtSeconds);
 
         m_poseUpdate.update(ecs, 0.0f);
+        m_visibleRenderGather.update(ecs, 0.0f);
         m_render.update(ecs, 0.0f);
     }
 

@@ -9,9 +9,12 @@
 #include "ECS/systems/PathfindingSystem.h"
 #include "ECS/systems/MovementSystem.h"
 #include "ECS/systems/RenderTransformUpdateSystem.h"
+#include "ECS/systems/RenderBoundsUpdateSystem.h"
+#include "ECS/systems/VisibilityCullingSystem.h"
 #include "systems/LocomotionAnimationControllerSystem.h"
 #include "ECS/systems/Animation/AnimationPlaybackSystem.h"
 #include "ECS/systems/PoseUpdateSystem.h"
+#include "ECS/systems/VisibleRenderGatherSystem.h"
 #include "ECS/systems/RenderSystem.h"
 #include "ECS/systems/SpatialIndexSystem.h"
 #include "ECS/systems/LocalAvoidanceSystem.h"
@@ -57,6 +60,8 @@ namespace Sample
         SteeringSystem m_steering;
         MovementSystem m_movement;
         RenderTransformUpdateSystem m_renderTransform;
+        RenderBoundsUpdateSystem m_renderBoundsUpdate;
+        VisibilityCullingSystem m_visibilityCulling;
 
         NavGrid m_navGrid;
         NavGridBuilderSystem m_navGridBuilder{&m_navGrid};
@@ -70,6 +75,8 @@ namespace Sample
         AnimationPlaybackSystem m_animPlayback;
 
         PoseUpdateSystem m_poseUpdate;
+
+        VisibleRenderGatherSystem m_visibleRenderGather;
 
         RenderSystem m_renderModel;
     };

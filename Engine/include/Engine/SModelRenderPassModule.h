@@ -4,6 +4,7 @@
 #include "assets/AssetManager.h"
 #include "assets/TextureAsset.h"
 #include "Engine/Camera.h"
+#include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <unordered_map>
@@ -36,18 +37,18 @@ namespace Engine
 
         void setCamera(Camera *cam) { m_camera = cam; }
 
-        // Per-instance world transforms for instanced drawing.
-        // If not called (or count==0), the module defaults to drawing 1 instance at identity.
-        void setInstances(const glm::mat4 *instanceWorlds, uint32_t count);
+        // Slot-based instancing:
+        // - Each visible entity gets a stable slot index while it remains visible.
+        // - The per-frame draw call uses a dense active-slot list; the shader maps
+        //   gl_InstanceIndex -> slotIndex -> instanceWorld/palettes.
+        void setSlotLayout(uint32_t nodeCount, uint32_t jointCount);
+        void ensureSlotCapacity(uint32_t slotCapacity);
+        void setActiveSlots(const uint32_t *slotIndices, uint32_t count);
 
-        // Per-instance node global matrices, flattened as [instance][node].
-        // Must be called when using per-entity animation (palette indexed by gl_InstanceIndex).
-        void setNodePalette(const glm::mat4 *nodeGlobals, uint32_t instanceCount, uint32_t nodeCount);
-
-        // Per-instance joint matrices, flattened as [instance][joint].
-        // Joint indices in the vertex stream are local to a skin; the shader uses push constants
-        // to offset into this global joint palette.
-        void setJointPalette(const glm::mat4 *jointMatrices, uint32_t instanceCount, uint32_t jointCount);
+        void setSlotWorld(uint32_t slotIndex, const glm::mat4 &world);
+        void setSlotPose(uint32_t slotIndex,
+                 const glm::mat4 *nodeGlobals, uint32_t nodeCount,
+                 const glm::mat4 *jointMatrices, uint32_t jointCount);
 
         // Column-major 4x4 matrix (16 floats). Defaults to identity.
         void setModelMatrix(const float *m16);
@@ -58,17 +59,6 @@ namespace Engine
         void onDestroy(VulkanContext &ctx) override;
 
     private:
-        struct InstanceFrame
-        {
-            VkBuffer buffer = VK_NULL_HANDLE;
-            VkDeviceMemory memory = VK_NULL_HANDLE;
-            void *mapped = nullptr;
-            uint32_t capacity = 0;
-
-            // Tracks which CPU-side instance data version has been uploaded into this frame's buffer.
-            uint64_t lastUploadedInstancesVersion = 0;
-        };
-
         struct PushConstantsModel
         {
             float model[16];
@@ -110,9 +100,8 @@ namespace Engine
             void *mapped = nullptr;
             VkDescriptorSet set = VK_NULL_HANDLE;
 
-            // Tracks which CPU-side palette versions have been uploaded into this frame's SSBOs.
-            uint64_t lastUploadedNodePaletteVersion = 0;
-            uint64_t lastUploadedJointPaletteVersion = 0;
+            // Tracks which active-slot list has been uploaded into this frame's SSBO.
+            uint64_t lastUploadedActiveSlotsVersion = 0;
 
             VkBuffer paletteBuffer = VK_NULL_HANDLE;
             VkDeviceMemory paletteMemory = VK_NULL_HANDLE;
@@ -123,6 +112,20 @@ namespace Engine
             VkDeviceMemory jointPaletteMemory = VK_NULL_HANDLE;
             void *jointPaletteMapped = nullptr;
             uint32_t jointPaletteCapacityMatrices = 0;
+
+            VkBuffer instanceWorldBuffer = VK_NULL_HANDLE;
+            VkDeviceMemory instanceWorldMemory = VK_NULL_HANDLE;
+            void *instanceWorldMapped = nullptr;
+            uint32_t instanceWorldCapacitySlots = 0;
+
+            VkBuffer activeSlotsBuffer = VK_NULL_HANDLE;
+            VkDeviceMemory activeSlotsMemory = VK_NULL_HANDLE;
+            void *activeSlotsMapped = nullptr;
+            uint32_t activeSlotsCapacity = 0;
+
+            // Per-slot incremental upload tracking for this frame's buffers.
+            std::vector<uint32_t> uploadedTransformEpoch;
+            std::vector<uint32_t> uploadedPoseEpoch;
         };
 
         void destroyResources();
@@ -133,9 +136,8 @@ namespace Engine
         bool ensurePaletteCapacity(CameraFrame &frame, uint32_t neededMatrices);
         bool ensureJointPaletteCapacity(CameraFrame &frame, uint32_t neededMatrices);
 
-        bool createInstanceResources(VulkanContext &ctx, size_t frameCount);
-        void destroyInstanceResources();
-        bool ensureInstanceCapacity(InstanceFrame &frame, uint32_t needed);
+        bool ensureInstanceWorldCapacity(CameraFrame &frame, uint32_t neededSlots);
+        bool ensureActiveSlotsCapacity(CameraFrame &frame, uint32_t needed);
 
         bool createMaterialResources(VulkanContext &ctx);
         void destroyMaterialResources();
@@ -167,20 +169,23 @@ namespace Engine
         VkDescriptorPool m_materialPool = VK_NULL_HANDLE;
         std::unordered_map<uint64_t, VkDescriptorSet> m_materialSetCache;
 
-        std::vector<InstanceFrame> m_instanceFrames;
-        std::vector<glm::mat4> m_instanceWorlds;
+        // Slot-based CPU-side data (indexed by stable slot index).
+        uint32_t m_slotNodeCount = 0;
+        uint32_t m_slotJointCount = 0;
 
-        uint64_t m_instancesVersion = 1;
+        std::vector<uint32_t> m_activeSlots;
+        uint64_t m_activeSlotsVersion = 1;
 
-        // Flattened node globals uploaded to a per-frame SSBO
+        std::vector<glm::mat4> m_slotWorlds;
+        std::vector<uint32_t> m_slotTransformEpoch;
+        uint32_t m_transformEpochCounter = 1;
+
+        // Flattened node globals: [slot][node]
         std::vector<glm::mat4> m_nodePalette;
+        // Flattened joint matrices: [slot][joint]
         std::vector<glm::mat4> m_jointPalette;
-        uint32_t m_jointPaletteJointCount = 0;
-        uint32_t m_paletteInstanceCount = 0;
-        uint32_t m_paletteNodeCount = 0;
-
-        uint64_t m_nodePaletteVersion = 1;
-        uint64_t m_jointPaletteVersion = 1;
+        std::vector<uint32_t> m_slotPoseEpoch;
+        uint32_t m_poseEpochCounter = 1;
 
         TextureAsset m_fallbackWhiteTexture;
 

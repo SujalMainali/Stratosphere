@@ -7,7 +7,10 @@
         "RenderMesh",
         "Facing",
         "RenderModel",
-        "RenderAnimation"
+        "RenderAnimation",
+                "RenderBounds",
+        "VisibilityState",
+        "RenderScale"
     ],
     "defaults": {
         "Position": {
@@ -24,9 +27,12 @@
         "RenderAnimation": {
             "clipIndex": 0,
             "playing": false
-        }
+        },
+        "RenderScale": {
+            "uniform": 1.0
+         }
     },
     "visual": {
-        "model": "assets/tree_stump_01_4k.gltf/tree_stump_01_4k.smodel"
+        "model": "assets/fence/cerca.smodel"
     }
 }

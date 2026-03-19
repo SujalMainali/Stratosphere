@@ -83,13 +83,16 @@ namespace Engine
             VkDeviceMemory jointPaletteMemory = VK_NULL_HANDLE;
             void *jointPaletteMapped = nullptr;
             uint32_t jointPaletteCapacityMatrices = 0;
-        };
 
-        struct InstanceFrame
-        {
-            VkBuffer buffer = VK_NULL_HANDLE;
-            VkDeviceMemory memory = VK_NULL_HANDLE;
-            void *mapped = nullptr;
+            VkBuffer instanceWorldBuffer = VK_NULL_HANDLE;
+            VkDeviceMemory instanceWorldMemory = VK_NULL_HANDLE;
+            void *instanceWorldMapped = nullptr;
+            uint32_t instanceWorldCapacitySlots = 0;
+
+            VkBuffer activeSlotsBuffer = VK_NULL_HANDLE;
+            VkDeviceMemory activeSlotsMemory = VK_NULL_HANDLE;
+            void *activeSlotsMapped = nullptr;
+            uint32_t activeSlotsCapacity = 0;
         };
 
         struct PlaneVertex
@@ -106,9 +109,6 @@ namespace Engine
     private:
         bool createCameraResources(VulkanContext &ctx, size_t frameCount);
         void destroyCameraResources();
-
-        bool createInstanceResources(VulkanContext &ctx, size_t frameCount);
-        void destroyInstanceResources();
 
         bool createMaterialResources(VulkanContext &ctx, size_t frameCount);
         void destroyMaterialResources();
@@ -141,9 +141,6 @@ namespace Engine
         VkDescriptorSetLayout m_materialSetLayout = VK_NULL_HANDLE;
         VkDescriptorPool m_materialPool = VK_NULL_HANDLE;
         std::vector<VkDescriptorSet> m_materialSets;
-
-        // Per-frame instance buffer (binding=1)
-        std::vector<InstanceFrame> m_instanceFrames;
 
         // Per-frame plane VB (binding=0)
         std::vector<VertexBufferHandle> m_planeVB;

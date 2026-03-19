@@ -119,8 +119,6 @@ namespace Engine
             const float deltaSeconds = std::chrono::duration<float>(now - lastFrameTime).count();
             lastFrameTime = now;
 
-            PerformanceMonitor::MainLoopTimings mainLoopTimings{};
-
             // Begin performance monitoring
             if (m_Impl->perfMonitor)
             {
@@ -128,12 +126,7 @@ namespace Engine
             }
 
             // Poll window events
-            {
-                const auto t0 = std::chrono::steady_clock::now();
-                m_Impl->window->OnUpdate();
-                const auto t1 = std::chrono::steady_clock::now();
-                mainLoopTimings.pollEventsMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
-            }
+            m_Impl->window->OnUpdate();
 
             // If a window event requested shutdown (Escape/WindowClose), stop cleanly
             // before running any further update/render work for this frame.
@@ -143,50 +136,23 @@ namespace Engine
             // Begin ImGui frame
             if (m_Impl->imguiLayer && m_Impl->imguiLayer->isInitialized())
             {
-                const auto t0 = std::chrono::steady_clock::now();
                 m_Impl->imguiLayer->beginFrame();
-                const auto t1 = std::chrono::steady_clock::now();
-                mainLoopTimings.imguiBeginMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
             }
 
             // User update/render hooks
             TimeStep ts{};
             ts.DeltaSeconds = deltaSeconds;
-            {
-                const auto t0 = std::chrono::steady_clock::now();
-                OnUpdate(ts);
-                const auto t1 = std::chrono::steady_clock::now();
-                mainLoopTimings.appUpdateMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
-            }
-
-            {
-                const auto t0 = std::chrono::steady_clock::now();
-                OnRender();
-                const auto t1 = std::chrono::steady_clock::now();
-                mainLoopTimings.appRenderMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
-            }
+            OnUpdate(ts);
+            OnRender();
 
             // End ImGui frame (this also calls the render callback)
             if (m_Impl->imguiLayer && m_Impl->imguiLayer->isInitialized())
             {
-                const auto t0 = std::chrono::steady_clock::now();
                 m_Impl->imguiLayer->endFrame();
-                const auto t1 = std::chrono::steady_clock::now();
-                mainLoopTimings.imguiEndMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
             }
 
             // Draw one frame (includes ImGui rendering)
-            {
-                const auto t0 = std::chrono::steady_clock::now();
-                m_Impl->renderer->drawFrame();
-                const auto t1 = std::chrono::steady_clock::now();
-                mainLoopTimings.drawFrameTotalMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
-            }
-
-            if (m_Impl->perfMonitor)
-            {
-                m_Impl->perfMonitor->setMainLoopTimings(mainLoopTimings);
-            }
+            m_Impl->renderer->drawFrame();
 
             // End performance monitoring
             if (m_Impl->perfMonitor)

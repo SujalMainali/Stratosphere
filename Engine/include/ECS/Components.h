@@ -189,6 +189,14 @@ namespace Engine::ECS
         uint32_t transformVersion = 0; // monotonic; wrap is OK
     };
 
+    // Per-entity render scale.
+    // Applied by RenderTransformUpdateSystem when building the world matrix.
+    // NOTE: This is visual-only; simulation sizes use other components (e.g., Radius).
+    struct RenderScale
+    {
+        float uniform = 1.0f;
+    };
+
     // Cached pose palettes computed by PoseUpdateSystem.
     // nodePalette: one matrix per node in the model.
     // jointPalette: one matrix per joint across all skins in the model (flattened).
@@ -205,6 +213,10 @@ namespace Engine::ECS
 
         // Optional debugging aid (local frame counter from PoseUpdateSystem).
         uint32_t lastUpdatedFrame = 0;
+
+        // Track the model source used to build this pose so model changes can force a refresh.
+        uint32_t sourceModelId = 0;
+        uint32_t sourceModelGeneration = 0;
     };
 
     // -----------------------
@@ -224,8 +236,39 @@ namespace Engine::ECS
         float interval = 1.5f; // time between attacks (seconds)
     };
 
+    // -----------------------
+    // Rendering & Visibility
+    // -----------------------
+
+    // Bounding sphere for render culling.
+    // localCenter/localRadius are in model space; computed from asset data or defaults.
+    // worldCenter/worldRadius are in world space; updated by RenderBoundsUpdateSystem.
+    struct RenderBounds
+    {
+        glm::vec3 localCenter{0.0f};     // center in model space
+        float localRadius = 1.0f;         // radius in model space
+
+        glm::vec3 worldCenter{0.0f};     // center in world space (updated per frame)
+        float worldRadius = 1.0f;         // radius in world space (updated per frame)
+
+        uint32_t boundsVersion = 0;       // monotonic version for tracking updates
+    };
+
+    // Runtime visibility state; render-system maintained.
+    // Track which entities are currently visible to the camera.
+    struct VisibilityState
+    {
+        bool visible = false;             // is entity visible this frame?
+        bool wasVisibleLastFrame = false; // was entity visible last frame?
+        uint32_t visibleFrame = 0;        // frame counter when visibility was last set to true
+        uint32_t lastTestFrame = 0;       // frame counter when frustum test was last performed
+
+        // Derived state: justBecameVisible = visible && !wasVisibleLastFrame
+        // Can be computed on demand or stored here for convenience
+    };
+
     // Typed defaults per component ID (used by Prefabs/Stores).
-    using DefaultValue = std::variant<Position, Velocity, Health, MoveTarget, MoveSpeed, Radius, Separation, AvoidanceParams, RenderModel, LocomotionClips, CombatClips, RenderAnimation, Facing, RenderTransform, ObstacleRadius, Path, PosePalette, Team, AttackCooldown>;
+    using DefaultValue = std::variant<Position, Velocity, Health, MoveTarget, MoveSpeed, Radius, Separation, AvoidanceParams, RenderModel, LocomotionClips, CombatClips, RenderAnimation, Facing, RenderTransform, RenderScale, ObstacleRadius, Path, PosePalette, Team, AttackCooldown, RenderBounds, VisibilityState>;
     // -----------------------
     // Component Registry
     // -----------------------
