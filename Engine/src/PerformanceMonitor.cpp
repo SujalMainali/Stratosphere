@@ -457,41 +457,6 @@ namespace Engine
         m_avgFPS = (avgFrameTime > 0.0f) ? (1000.0f / avgFrameTime) : 0.0f;
 
         // Calculate percentile FPS
-        calculatePercentileFPS();
-    }
-
-    void PerformanceMonitor::calculatePercentileFPS()
-    {
-        if (m_frameTimeHistory.size() < 10)
-        {
-            m_1percentLowFPS = m_avgFPS;
-            m_01percentLowFPS = m_avgFPS;
-            return;
-        }
-
-        // Copy and sort frame times (descending - longest times first = worst frames)
-        std::vector<float> sortedTimes(m_frameTimeHistory.begin(), m_frameTimeHistory.end());
-        std::sort(sortedTimes.begin(), sortedTimes.end(), std::greater<float>());
-
-        // 1% low = average of worst 1% of frames
-        size_t onePercentCount = std::max(static_cast<size_t>(1), sortedTimes.size() / 100);
-        float sum1Percent = 0.0f;
-        for (size_t i = 0; i < onePercentCount; ++i)
-        {
-            sum1Percent += sortedTimes[i];
-        }
-        float avg1PercentTime = sum1Percent / static_cast<float>(onePercentCount);
-        m_1percentLowFPS = (avg1PercentTime > 0.0f) ? (1000.0f / avg1PercentTime) : 0.0f;
-
-        // 0.1% low = the single worst frame (or average of worst 0.1%)
-        size_t point1PercentCount = std::max(static_cast<size_t>(1), sortedTimes.size() / 1000);
-        float sum01Percent = 0.0f;
-        for (size_t i = 0; i < point1PercentCount; ++i)
-        {
-            sum01Percent += sortedTimes[i];
-        }
-        float avg01PercentTime = sum01Percent / static_cast<float>(point1PercentCount);
-        m_01percentLowFPS = (avg01PercentTime > 0.0f) ? (1000.0f / avg01PercentTime) : 0.0f;
     }
 
     uint32_t PerformanceMonitor::getResolutionWidth() const
@@ -566,8 +531,6 @@ namespace Engine
             ImGui::PushStyleColor(ImGuiCol_Text, fpsColor);
             ImGui::Text("  Average: %.1f", m_avgFPS);
             ImGui::PopStyleColor();
-            ImGui::Text("  1%% Low:  %.1f", m_1percentLowFPS);
-            ImGui::Text("  0.1%% Low: %.1f", m_01percentLowFPS);
 
             ImGui::Spacing();
 
@@ -589,53 +552,7 @@ namespace Engine
 
             if (m_renderer)
             {
-                // Extra per-stage CPU instrumentation (debug only)
-#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
-                const auto &t = m_renderer->getCpuFrameTimings();
-                ImGui::Text("  DrawFrame CPU:");
-                ImGui::Text("    WaitFence: %.2f ms", t.waitFenceMs);
-                ImGui::Text("    Acquire:   %.2f ms", t.acquireMs);
-                ImGui::Text("    Record:    %.2f ms", t.recordMs);
-                ImGui::Text("      CmdReset:   %.2f ms", t.cmdResetMs);
-                ImGui::Text("      CmdBegin:   %.2f ms", t.cmdBeginMs);
-                ImGui::Text("      Timestamps: %.2f ms", t.timestampResetMs);
-                ImGui::Text("      RP Begin:   %.2f ms", t.renderPassBeginMs);
-                ImGui::Text("      Passes:     %.2f ms", t.passesRecordMs);
-                ImGui::Text("      ImGui:      %.2f ms", t.imguiRecordMs);
-                ImGui::Text("      RP End:     %.2f ms", t.renderPassEndMs);
-                ImGui::Text("      CmdEnd:     %.2f ms", t.cmdEndMs);
-                ImGui::Text("    Submit:    %.2f ms", t.submitMs);
-                ImGui::Text("    QueryRes:  %.2f ms", t.queryResultsMs);
-                ImGui::Text("    Present:   %.2f ms", t.presentMs);
-                ImGui::Text("    Total:     %.2f ms", t.drawFrameTotalMs);
-                ImGui::Text("    Other:     %.2f ms", t.otherMs);
-
-                const auto &passTimings = m_renderer->getCpuPassTimings();
-                if (!passTimings.empty())
-                {
-                    ImGui::Text("    Per-pass:");
-                    for (const auto &pt : passTimings)
-                    {
-                        if (pt.recordMs <= 0.0f)
-                            continue;
-                        ImGui::Text("      %s: %.2f ms", (pt.name && pt.name[0]) ? pt.name : "(unnamed)", pt.recordMs);
-                    }
-                }
-
-                {
-                    const auto &m = m_mainLoopTimings;
-                    const float accountedMs = m.pollEventsMs + m.imguiBeginMs + m.appUpdateMs + m.appRenderMs + m.imguiEndMs + m.drawFrameTotalMs;
-                    ImGui::Text("  Main Loop (last frame):");
-                    ImGui::Text("    PollEvents: %.2f ms", m.pollEventsMs);
-                    ImGui::Text("    ImGuiBegin: %.2f ms", m.imguiBeginMs);
-                    ImGui::Text("    AppUpdate:  %.2f ms", m.appUpdateMs);
-                    ImGui::Text("    AppRender:  %.2f ms", m.appRenderMs);
-                    ImGui::Text("    ImGuiEnd:   %.2f ms", m.imguiEndMs);
-                    ImGui::Text("    DrawFrame:  %.2f ms", m.drawFrameTotalMs);
-                    ImGui::Text("    Accounted:  %.2f ms", accountedMs);
-                    ImGui::Text("    CPU (raw):  %.2f ms", m_cpuTimeMs);
-                }
-#endif
+                ImGui::Text("  DrawFrame:  %.2f ms", m_frameTimeMs);
             }
 
             ImGui::Spacing();
@@ -729,66 +646,6 @@ namespace Engine
             ImGui::Text("  Draw Calls: %u", m_lastFrameDrawCalls);
 
             ImGui::Spacing();
-
-#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
-            // --- ECS schedule trace (debug-only) ---
-            if (m_ecs)
-            {
-                auto events = m_ecs->trace.snapshotEvents();
-                if (!events.empty())
-                {
-                    ImGui::Separator();
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.4f, 1.0f));
-                    ImGui::Text("ECS Schedule");
-                    ImGui::PopStyleColor();
-
-                    // Update stable display order (first-seen wins).
-                    for (const auto &e : events)
-                    {
-                        if (m_ecsSystemDisplayIndex.find(e.name) != m_ecsSystemDisplayIndex.end())
-                            continue;
-                        m_ecsSystemDisplayIndex.emplace(e.name, m_ecsSystemDisplayOrder.size());
-                        m_ecsSystemDisplayOrder.push_back(e.name);
-                    }
-
-                    // Map events by name for quick lookup.
-                    std::unordered_map<std::string, const Engine::ECS::EcsTrace::SystemEvent *> byName;
-                    byName.reserve(events.size());
-                    for (const auto &e : events)
-                        byName.emplace(e.name, &e);
-
-                    // Render in stable order so parallel systems don't reshuffle rows.
-                    for (const auto &name : m_ecsSystemDisplayOrder)
-                    {
-                        auto it = byName.find(name);
-                        if (it == byName.end() || it->second == nullptr)
-                            continue;
-                        const auto &e = *it->second;
-
-                        // Adaptive precision so very fast systems don't show as 0.00 ms.
-                        if (e.ms < 0.01f)
-                            ImGui::Text("  %s: %.0f us", e.name.c_str(), e.ms * 1000.0f);
-                        else if (e.ms < 0.10f)
-                            ImGui::Text("  %s: %.3f ms", e.name.c_str(), e.ms);
-                        else
-                            ImGui::Text("  %s: %.2f ms", e.name.c_str(), e.ms);
-
-                        if (e.name == "SpatialIndexSystem")
-                        {
-                            ImGui::TextDisabled("    cells=%u  entries=%u  dirty=%u  topDirty(A%u)=%u",
-                                                e.matchingArchetypes, e.entitiesScanned, e.dirtyRowsConsumed,
-                                                e.topDirtyArchetypeId, e.topDirtyRows);
-                        }
-                        else
-                        {
-                            ImGui::TextDisabled("    archetypes=%u  scanned=%u  dirty=%u  topDirty(A%u)=%u",
-                                                e.matchingArchetypes, e.entitiesScanned, e.dirtyRowsConsumed,
-                                                e.topDirtyArchetypeId, e.topDirtyRows);
-                        }
-                    }
-                }
-            }
-#endif
 
             ImGui::Separator();
             ImGui::TextDisabled("Press F1 to toggle");
