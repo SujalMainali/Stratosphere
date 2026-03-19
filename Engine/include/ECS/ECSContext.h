@@ -127,6 +127,8 @@ namespace Engine::ECS
                 dstStore->facings()[dstRow] = srcStore->facings()[srcRow];
             if (srcStore->hasRenderTransform() && dstStore->hasRenderTransform())
                 dstStore->renderTransforms()[dstRow] = srcStore->renderTransforms()[srcRow];
+            if (srcStore->hasRenderScale() && dstStore->hasRenderScale())
+                dstStore->renderScales()[dstRow] = srcStore->renderScales()[srcRow];
             if (srcStore->hasPosePalette() && dstStore->hasPosePalette())
                 dstStore->posePalettes()[dstRow] = srcStore->posePalettes()[srcRow];
             if (srcStore->hasRenderBounds() && dstStore->hasRenderBounds())

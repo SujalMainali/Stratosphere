@@ -187,6 +187,12 @@ namespace Engine::ECS
                 if (p.defaults.find(rtId) == p.defaults.end())
                     p.defaults.emplace(rtId, RenderTransform{});
 
+                // Per-entity render scale (defaults to 1.0).
+                const uint32_t rsId = registry.ensureId("RenderScale");
+                p.signature.set(rsId);
+                if (p.defaults.find(rsId) == p.defaults.end())
+                    p.defaults.emplace(rsId, RenderScale{});
+
                 // Visibility runtime state.
                 const uint32_t vsId = registry.ensureId("VisibilityState");
                 p.signature.set(vsId);
@@ -413,6 +419,21 @@ namespace Engine::ECS
                 f.yaw = std::stof(m[1].str());
                 uint32_t cid = registry.ensureId("Facing");
                 p.defaults.emplace(cid, f);
+            }
+        }
+
+        // Parse defaults: RenderScale
+        {
+            std::regex re_scale(R"("RenderScale"\s*:\s*\{\s*"uniform"\s*:\s*([-+]?\d*\.?\d+)\s*\})");
+            std::smatch m;
+            if (std::regex_search(jsonText, m, re_scale))
+            {
+                RenderScale s{};
+                s.uniform = std::stof(m[1].str());
+                if (!std::isfinite(s.uniform) || s.uniform <= 0.0f)
+                    s.uniform = 1.0f;
+                uint32_t cid = registry.ensureId("RenderScale");
+                p.defaults.emplace(cid, s);
             }
         }
 

@@ -66,6 +66,8 @@ namespace Engine::ECS
                 m_facings.emplace_back(Facing{});
             if (hasRenderTransform())
                 m_renderTransforms.emplace_back(RenderTransform{});
+            if (hasRenderScale())
+                m_renderScales.emplace_back(RenderScale{});
             if (hasObstacleRadius())
                 m_obstacleRadii.emplace_back(ObstacleRadius{});
             if (hasPath())
@@ -135,6 +137,8 @@ namespace Engine::ECS
                 swapErase(m_facings);
             if (hasRenderTransform())
                 swapErase(m_renderTransforms);
+            if (hasRenderScale())
+                swapErase(m_renderScales);
             if (hasObstacleRadius())
                 swapErase(m_obstacleRadii);
             if (hasPath())
@@ -225,6 +229,10 @@ namespace Engine::ECS
                 {
                     m_renderTransforms[row] = std::get<RenderTransform>(kv.second);
                 }
+                else if (std::holds_alternative<RenderScale>(kv.second) && hasRenderScale())
+                {
+                    m_renderScales[row] = std::get<RenderScale>(kv.second);
+                }
                 else if (std::holds_alternative<ObstacleRadius>(kv.second) && hasObstacleRadius())
                 {
                     m_obstacleRadii[row] = std::get<ObstacleRadius>(kv.second);
@@ -305,6 +313,9 @@ namespace Engine::ECS
         std::vector<RenderTransform> &renderTransforms() { return m_renderTransforms; }
         const std::vector<RenderTransform> &renderTransforms() const { return m_renderTransforms; }
 
+        std::vector<RenderScale> &renderScales() { return m_renderScales; }
+        const std::vector<RenderScale> &renderScales() const { return m_renderScales; }
+
         std::vector<ObstacleRadius> &obstacleRadii() { return m_obstacleRadii; }
         const std::vector<ObstacleRadius> &obstacleRadii() const { return m_obstacleRadii; }
 
@@ -340,6 +351,7 @@ namespace Engine::ECS
         bool hasRenderAnimation() const { return m_hasRenderAnimation; }
         bool hasFacing() const { return m_hasFacing; }
         bool hasRenderTransform() const { return m_hasRenderTransform; }
+        bool hasRenderScale() const { return m_hasRenderScale; }
         bool hasObstacle() const { return m_hasObstacle; }
         bool hasObstacleRadius() const { return m_hasObstacleRadius; }
         bool hasPath() const { return m_hasPath; }
@@ -366,6 +378,7 @@ namespace Engine::ECS
             const uint32_t raId = registry.ensureId("RenderAnimation");
             const uint32_t faceId = registry.ensureId("Facing");
             const uint32_t rtId = registry.ensureId("RenderTransform");
+            const uint32_t rsId = registry.ensureId("RenderScale");
             const uint32_t obsId = registry.ensureId("Obstacle");
             const uint32_t obsRId = registry.ensureId("ObstacleRadius");
             const uint32_t pathId = registry.ensureId("Path");
@@ -384,6 +397,7 @@ namespace Engine::ECS
             m_hasRenderAnimation = m_signature.has(raId);
             m_hasFacing = m_signature.has(faceId);
             m_hasRenderTransform = m_signature.has(rtId);
+            m_hasRenderScale = m_signature.has(rsId);
             m_hasObstacle = m_signature.has(obsId);
             m_hasObstacleRadius = m_signature.has(obsRId);
             m_hasPath = m_signature.has(pathId);
@@ -419,6 +433,7 @@ namespace Engine::ECS
         std::vector<RenderAnimation> m_renderAnimations;
         std::vector<Facing> m_facings;
         std::vector<RenderTransform> m_renderTransforms;
+        std::vector<RenderScale> m_renderScales;
         std::vector<ObstacleRadius> m_obstacleRadii;
         std::vector<Path> m_paths;
         std::vector<PosePalette> m_posePalettes;
@@ -442,6 +457,7 @@ namespace Engine::ECS
         bool m_hasRenderAnimation = false;
         bool m_hasFacing = false;
         bool m_hasRenderTransform = false;
+        bool m_hasRenderScale = false;
         bool m_hasObstacle = false;
         bool m_hasObstacleRadius = false;
         bool m_hasPath = false;

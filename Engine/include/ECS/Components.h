@@ -189,6 +189,14 @@ namespace Engine::ECS
         uint32_t transformVersion = 0; // monotonic; wrap is OK
     };
 
+    // Per-entity render scale.
+    // Applied by RenderTransformUpdateSystem when building the world matrix.
+    // NOTE: This is visual-only; simulation sizes use other components (e.g., Radius).
+    struct RenderScale
+    {
+        float uniform = 1.0f;
+    };
+
     // Cached pose palettes computed by PoseUpdateSystem.
     // nodePalette: one matrix per node in the model.
     // jointPalette: one matrix per joint across all skins in the model (flattened).
@@ -260,7 +268,7 @@ namespace Engine::ECS
     };
 
     // Typed defaults per component ID (used by Prefabs/Stores).
-    using DefaultValue = std::variant<Position, Velocity, Health, MoveTarget, MoveSpeed, Radius, Separation, AvoidanceParams, RenderModel, LocomotionClips, CombatClips, RenderAnimation, Facing, RenderTransform, ObstacleRadius, Path, PosePalette, Team, AttackCooldown, RenderBounds, VisibilityState>;
+    using DefaultValue = std::variant<Position, Velocity, Health, MoveTarget, MoveSpeed, Radius, Separation, AvoidanceParams, RenderModel, LocomotionClips, CombatClips, RenderAnimation, Facing, RenderTransform, RenderScale, ObstacleRadius, Path, PosePalette, Team, AttackCooldown, RenderBounds, VisibilityState>;
     // -----------------------
     // Component Registry
     // -----------------------

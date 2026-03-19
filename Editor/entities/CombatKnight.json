@@ -14,7 +14,9 @@
         "Team",
         "AttackCooldown",
         "LocomotionClips",
-        "CombatClips"
+        "CombatClips",
+        "RenderBounds",
+        "VisibilityState"
     ],
     "defaults": {
         "Position": {
