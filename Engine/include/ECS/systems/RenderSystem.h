@@ -26,7 +26,8 @@ public:
         // RenderModel provides the model handle.
         // PosePalette provides per-entity node/joint palettes.
         // RenderTransform provides the cached world matrix.
-        setRequiredNames({"RenderModel", "PosePalette", "RenderTransform"});
+        // VisibilityState provides visibility information for culling.
+        setRequiredNames({"RenderModel", "PosePalette", "RenderTransform", "VisibilityState"});
         setExcludedNames({"Disabled", "Dead"});
     }
 
@@ -90,15 +91,22 @@ public:
                 continue;
             if (!store.hasRenderTransform())
                 continue;
+            if (!store.hasVisibilityState())
+                continue;
 
             auto &renderModels = store.renderModels();
             auto &renderTransforms = store.renderTransforms();
             auto &posePalettes = store.posePalettes();
+            auto &visibilityStates = store.visibilityState();
             auto &entities = store.entities();
             const uint32_t n = store.size();
 
             for (uint32_t row = 0; row < n; ++row)
             {
+                // Skip invisible entities
+                if (!visibilityStates[row].visible)
+                    continue;
+
                 const Engine::ModelHandle handle = renderModels[row].handle;
                 Engine::ModelAsset *asset = m_assets->getModel(handle);
                 if (!asset)

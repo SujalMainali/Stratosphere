@@ -76,6 +76,10 @@ namespace Engine::ECS
                 m_teams.emplace_back(Team{});
             if (hasAttackCooldown())
                 m_attackCooldowns.emplace_back(AttackCooldown{});
+            if (hasRenderBounds())
+                m_renderBounds.emplace_back(RenderBounds{});
+            if (hasVisibilityState())
+                m_visibilityState.emplace_back(VisibilityState{});
 
             return row;
         }
@@ -141,6 +145,10 @@ namespace Engine::ECS
                 swapErase(m_teams);
             if (hasAttackCooldown())
                 swapErase(m_attackCooldowns);
+            if (hasRenderBounds())
+                swapErase(m_renderBounds);
+            if (hasVisibilityState())
+                swapErase(m_visibilityState);
 
             return moved;
         }
@@ -303,6 +311,12 @@ namespace Engine::ECS
         std::vector<AttackCooldown> &attackCooldowns() { return m_attackCooldowns; }
         const std::vector<AttackCooldown> &attackCooldowns() const { return m_attackCooldowns; }
 
+        std::vector<RenderBounds> &renderBounds() { return m_renderBounds; }
+        const std::vector<RenderBounds> &renderBounds() const { return m_renderBounds; }
+
+        std::vector<VisibilityState> &visibilityState() { return m_visibilityState; }
+        const std::vector<VisibilityState> &visibilityState() const { return m_visibilityState; }
+
         // Helpers
         bool hasPosition() const { return m_hasPosition; }
         bool hasVelocity() const { return m_hasVelocity; }
@@ -324,6 +338,8 @@ namespace Engine::ECS
         bool hasPosePalette() const { return m_hasPosePalette; }
         bool hasTeam() const { return m_hasTeam; }
         bool hasAttackCooldown() const { return m_hasAttackCooldown; }
+        bool hasRenderBounds() const { return m_hasRenderBounds; }
+        bool hasVisibilityState() const { return m_hasVisibilityState; }
 
         // Resolve which known components are present in signature; enables arrays accordingly.
         void resolveKnownComponents(ComponentRegistry &registry)
@@ -369,6 +385,11 @@ namespace Engine::ECS
             const uint32_t ackId = registry.ensureId("AttackCooldown");
             m_hasTeam = m_signature.has(teamId);
             m_hasAttackCooldown = m_signature.has(ackId);
+
+            const uint32_t rbId = registry.ensureId("RenderBounds");
+            const uint32_t vsId = registry.ensureId("VisibilityState");
+            m_hasRenderBounds = m_signature.has(rbId);
+            m_hasVisibilityState = m_signature.has(vsId);
         }
 
     private:
@@ -395,6 +416,8 @@ namespace Engine::ECS
         std::vector<PosePalette> m_posePalettes;
         std::vector<Team> m_teams;
         std::vector<AttackCooldown> m_attackCooldowns;
+        std::vector<RenderBounds> m_renderBounds;
+        std::vector<VisibilityState> m_visibilityState;
 
         // Flags indicating which arrays are active.
         bool m_hasPosition = false;
@@ -417,6 +440,8 @@ namespace Engine::ECS
         bool m_hasPosePalette = false;
         bool m_hasTeam = false;
         bool m_hasAttackCooldown = false;
+        bool m_hasRenderBounds = false;
+        bool m_hasVisibilityState = false;
     };
 
     class ArchetypeStoreManager

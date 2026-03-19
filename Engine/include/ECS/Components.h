@@ -224,8 +224,39 @@ namespace Engine::ECS
         float interval = 1.5f; // time between attacks (seconds)
     };
 
+    // -----------------------
+    // Rendering & Visibility
+    // -----------------------
+
+    // Bounding sphere for render culling.
+    // localCenter/localRadius are in model space; computed from asset data or defaults.
+    // worldCenter/worldRadius are in world space; updated by RenderBoundsUpdateSystem.
+    struct RenderBounds
+    {
+        glm::vec3 localCenter{0.0f};     // center in model space
+        float localRadius = 1.0f;         // radius in model space
+
+        glm::vec3 worldCenter{0.0f};     // center in world space (updated per frame)
+        float worldRadius = 1.0f;         // radius in world space (updated per frame)
+
+        uint32_t boundsVersion = 0;       // monotonic version for tracking updates
+    };
+
+    // Runtime visibility state; render-system maintained.
+    // Track which entities are currently visible to the camera.
+    struct VisibilityState
+    {
+        bool visible = false;             // is entity visible this frame?
+        bool wasVisibleLastFrame = false; // was entity visible last frame?
+        uint32_t visibleFrame = 0;        // frame counter when visibility was last set to true
+        uint32_t lastTestFrame = 0;       // frame counter when frustum test was last performed
+
+        // Derived state: justBecameVisible = visible && !wasVisibleLastFrame
+        // Can be computed on demand or stored here for convenience
+    };
+
     // Typed defaults per component ID (used by Prefabs/Stores).
-    using DefaultValue = std::variant<Position, Velocity, Health, MoveTarget, MoveSpeed, Radius, Separation, AvoidanceParams, RenderModel, LocomotionClips, CombatClips, RenderAnimation, Facing, RenderTransform, ObstacleRadius, Path, PosePalette, Team, AttackCooldown>;
+    using DefaultValue = std::variant<Position, Velocity, Health, MoveTarget, MoveSpeed, Radius, Separation, AvoidanceParams, RenderModel, LocomotionClips, CombatClips, RenderAnimation, Facing, RenderTransform, ObstacleRadius, Path, PosePalette, Team, AttackCooldown, RenderBounds, VisibilityState>;
     // -----------------------
     // Component Registry
     // -----------------------

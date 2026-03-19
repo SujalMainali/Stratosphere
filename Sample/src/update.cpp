@@ -26,6 +26,8 @@ namespace Sample
                 m_pathfinding.buildMasks(registry);
                 m_movement.buildMasks(registry);
                 m_renderTransform.buildMasks(registry);
+                m_renderBoundsUpdate.buildMasks(registry);
+                m_visibilityCulling.buildMasks(registry);
                 m_spatialIndex.buildMasks(registry);
                 m_localAvoidance.buildMasks(registry);
                 m_combat.buildMasks(registry);
@@ -76,6 +78,12 @@ namespace Sample
                 // 9. Render transform cache (Position/Facing -> RenderTransform)
                 m_renderTransform.update(ecs, dtSeconds);
 
+                // 9a. Update world bounds from render transform
+                m_renderBoundsUpdate.update(ecs, dtSeconds);
+
+                // 9b. Cull invisible entities based on camera frustum
+                m_visibilityCulling.update(ecs, dtSeconds);
+
                 // 10. Animation selection (sample policy)
                 m_locomotionAnim.update(ecs, dtSeconds);
 
@@ -105,6 +113,7 @@ namespace Sample
         void SystemRunner::SetCamera(Engine::Camera *camera)
         {
                 m_renderModel.setCamera(camera);
+                m_visibilityCulling.setCamera(camera);
         }
 
         void SystemRunner::SetGlobalMoveTarget(float x, float y, float z)
