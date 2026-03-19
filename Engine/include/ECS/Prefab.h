@@ -23,6 +23,7 @@
 #include <regex>
 #include <vector>
 #include <iostream>
+#include <cmath>
 
 #include "ECS/Components.h"
 #include "ECS/ArchetypeManager.h"
@@ -185,6 +186,42 @@ namespace Engine::ECS
                 p.signature.set(rtId);
                 if (p.defaults.find(rtId) == p.defaults.end())
                     p.defaults.emplace(rtId, RenderTransform{});
+
+                // Visibility runtime state.
+                const uint32_t vsId = registry.ensureId("VisibilityState");
+                p.signature.set(vsId);
+                if (p.defaults.find(vsId) == p.defaults.end())
+                    p.defaults.emplace(vsId, VisibilityState{});
+
+                // Render bounds: derive from model metadata when possible, otherwise use conservative defaults.
+                const uint32_t rbId = registry.ensureId("RenderBounds");
+                p.signature.set(rbId);
+                if (p.defaults.find(rbId) == p.defaults.end())
+                {
+                    RenderBounds rb{};
+
+                    auto itRm = p.defaults.find(rmId);
+                    if (itRm != p.defaults.end() && std::holds_alternative<RenderModel>(itRm->second))
+                    {
+                        const RenderModel &rm = std::get<RenderModel>(itRm->second);
+                        if (Engine::ModelAsset *asset = assets.getModel(rm.handle); asset && asset->hasBounds)
+                        {
+                            const glm::vec3 bmin{asset->boundsMin[0], asset->boundsMin[1], asset->boundsMin[2]};
+                            const glm::vec3 bmax{asset->boundsMax[0], asset->boundsMax[1], asset->boundsMax[2]};
+                            rb.localCenter = (bmin + bmax) * 0.5f;
+
+                            const glm::vec3 ext = (bmax - bmin) * 0.5f;
+                            rb.localRadius = glm::length(ext);
+                            if (!(rb.localRadius > 1e-5f) || !std::isfinite(rb.localRadius))
+                                rb.localRadius = 1.0f;
+
+                            rb.worldCenter = rb.localCenter;
+                            rb.worldRadius = rb.localRadius;
+                        }
+                    }
+
+                    p.defaults.emplace(rbId, rb);
+                }
             }
         }
 

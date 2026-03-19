@@ -2,6 +2,7 @@
 
 #include "ECS/SystemFormat.h"
 #include <glm/glm.hpp>
+#include <algorithm>
 #include <cmath>
 
 class RenderBoundsUpdateSystem : public Engine::ECS::SystemBase
@@ -19,6 +20,8 @@ public:
     void buildMasks(Engine::ECS::ComponentRegistry &registry) override
     {
         Engine::ECS::SystemBase::buildMasks(registry);
+        m_renderTransformId = registry.ensureId("RenderTransform");
+        m_renderBoundsId = registry.ensureId("RenderBounds");
         m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     }
 
@@ -27,7 +30,11 @@ public:
         (void)dt;
 
         if (m_queryId == Engine::ECS::QueryManager::InvalidQuery)
-            m_queryId = ecs.queries.createQuery(required(), excluded(), ecs.stores);
+        {
+            Engine::ECS::ComponentMask dirty;
+            dirty.set(m_renderTransformId);
+            m_queryId = ecs.queries.createDirtyQuery(required(), excluded(), dirty, ecs.stores);
+        }
 
         const auto &q = ecs.queries.get(m_queryId);
 
@@ -48,9 +55,15 @@ public:
             auto &renderTransforms = store.renderTransforms();
             auto &renderBounds = store.renderBounds();
             const uint32_t n = store.size();
+            auto dirtyRows = ecs.queries.consumeDirtyRows(m_queryId, archetypeId);
+            if (dirtyRows.empty())
+                continue;
 
-            for (uint32_t row = 0; row < n; ++row)
+            for (uint32_t row : dirtyRows)
             {
+                if (row >= n)
+                    continue;
+
                 auto &bounds = renderBounds[row];
                 const auto &transform = renderTransforms[row].world;
 
@@ -68,10 +81,13 @@ public:
 
                 bounds.worldRadius = bounds.localRadius * maxScale;
                 bounds.boundsVersion++;
+                ecs.markDirty(m_renderBoundsId, archetypeId, row);
             }
         }
     }
 
 private:
     Engine::ECS::QueryId m_queryId = Engine::ECS::QueryManager::InvalidQuery;
+    uint32_t m_renderTransformId = Engine::ECS::ComponentRegistry::InvalidID;
+    uint32_t m_renderBoundsId = Engine::ECS::ComponentRegistry::InvalidID;
 };

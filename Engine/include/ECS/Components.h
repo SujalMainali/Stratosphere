@@ -205,6 +205,10 @@ namespace Engine::ECS
 
         // Optional debugging aid (local frame counter from PoseUpdateSystem).
         uint32_t lastUpdatedFrame = 0;
+
+        // Track the model source used to build this pose so model changes can force a refresh.
+        uint32_t sourceModelId = 0;
+        uint32_t sourceModelGeneration = 0;
     };
 
     // -----------------------

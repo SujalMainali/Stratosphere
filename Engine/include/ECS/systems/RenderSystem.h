@@ -17,6 +17,10 @@
 #include <unordered_map>
 #include <vector>
 
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+#include <iostream>
+#endif
+
 class RenderSystem : public Engine::ECS::SystemBase
 {
 public:
@@ -48,6 +52,8 @@ public:
         (void)dt;
         if (!m_assets || !m_renderer || !m_camera)
             return;
+
+        Stats frameStats{};
 
         auto keyFromHandle = [](const Engine::ModelHandle &h) -> uint64_t
         {
@@ -100,12 +106,18 @@ public:
             auto &visibilityStates = store.visibilityState();
             auto &entities = store.entities();
             const uint32_t n = store.size();
+            frameStats.totalCandidates += n;
 
             for (uint32_t row = 0; row < n; ++row)
             {
                 // Skip invisible entities
                 if (!visibilityStates[row].visible)
+                {
+                    frameStats.invisibleSkipped += 1u;
                     continue;
+                }
+
+                frameStats.visibleProcessed += 1u;
 
                 const Engine::ModelHandle handle = renderModels[row].handle;
                 Engine::ModelAsset *asset = m_assets->getModel(handle);
@@ -152,6 +164,7 @@ public:
                 batch.contentHash = fnv1aMixU32(batch.contentHash, posePalettes[row].poseVersion);
 
                 batch.instanceWorlds.emplace_back(world);
+                frameStats.submittedInstances += 1u;
 
                 // Palettes come from PosePalette component.
                 const auto &pose = posePalettes[row];
@@ -230,9 +243,29 @@ public:
                 kv.second.pass->setEnabled(false);
             }
         }
+
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+        if ((m_frameCounter % 120u) == 0u)
+        {
+            std::cout << "[RenderSystem] frame=" << m_frameCounter
+                      << " candidates=" << frameStats.totalCandidates
+                      << " visible=" << frameStats.visibleProcessed
+                      << " submitted=" << frameStats.submittedInstances
+                      << " skippedInvisible=" << frameStats.invisibleSkipped
+                      << "\n";
+        }
+#endif
     }
 
 private:
+    struct Stats
+    {
+        uint32_t totalCandidates = 0;
+        uint32_t visibleProcessed = 0;
+        uint32_t submittedInstances = 0;
+        uint32_t invisibleSkipped = 0;
+    };
+
     struct PerModelBatch
     {
         Engine::ModelHandle handle{};

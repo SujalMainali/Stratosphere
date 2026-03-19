@@ -245,6 +245,14 @@ namespace Engine::ECS
                 {
                     m_attackCooldowns[row] = std::get<AttackCooldown>(kv.second);
                 }
+                else if (std::holds_alternative<RenderBounds>(kv.second) && hasRenderBounds())
+                {
+                    m_renderBounds[row] = std::get<RenderBounds>(kv.second);
+                }
+                else if (std::holds_alternative<VisibilityState>(kv.second) && hasVisibilityState())
+                {
+                    m_visibilityState[row] = std::get<VisibilityState>(kv.second);
+                }
             }
         }
 

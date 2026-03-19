@@ -8,6 +8,10 @@
 #include <cstdint>
 #include <vector>
 
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+#include <iostream>
+#endif
+
 class PoseUpdateSystem : public Engine::ECS::SystemBase
 {
 public:
@@ -19,7 +23,7 @@ public:
 
     PoseUpdateSystem()
     {
-        setRequiredNames({"RenderModel", "RenderAnimation", "PosePalette"});
+        setRequiredNames({"RenderModel", "RenderAnimation", "PosePalette", "VisibilityState"});
         setExcludedNames({"Disabled", "Dead"});
     }
 
@@ -32,6 +36,7 @@ public:
         Engine::ECS::SystemBase::buildMasks(registry);
         m_renderAnimId = registry.ensureId("RenderAnimation");
         m_renderModelId = registry.ensureId("RenderModel");
+        m_visibilityStateId = registry.ensureId("VisibilityState");
         m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     }
 
@@ -41,12 +46,14 @@ public:
             return;
 
         ++m_frameCounter;
+        m_lastStats = Stats{};
 
         if (m_queryId == Engine::ECS::QueryManager::InvalidQuery)
         {
             Engine::ECS::ComponentMask dirty;
             dirty.set(m_renderAnimId);
             dirty.set(m_renderModelId);
+            dirty.set(m_visibilityStateId);
             m_queryId = ecs.queries.createDirtyQuery(required(), excluded(), dirty, ecs.stores);
         }
 
@@ -56,35 +63,67 @@ public:
             Engine::ECS::ArchetypeStore *store = ecs.stores.get(archetypeId);
             if (!store)
                 continue;
-            if (!store->hasRenderModel() || !store->hasRenderAnimation() || !store->hasPosePalette())
+            if (!store->hasRenderModel() || !store->hasRenderAnimation() || !store->hasPosePalette() || !store->hasVisibilityState())
                 continue;
 
             auto dirtyRows = ecs.queries.consumeDirtyRows(m_queryId, archetypeId);
             if (dirtyRows.empty())
                 continue;
 
+            m_lastStats.dirtyCandidates += static_cast<uint32_t>(dirtyRows.size());
+
             auto &renderModels = store->renderModels();
             auto &renderAnimations = store->renderAnimations();
             auto &posePalettes = store->posePalettes();
+            const auto &visibilityStates = store->visibilityState();
 
             const uint32_t scratchCount = (ecs.jobSystem ? (ecs.jobSystem->workerCount() + 1u) : 1u);
             if (m_workerScratch.size() < scratchCount)
                 m_workerScratch.resize(scratchCount);
+            if (m_workerStats.size() < scratchCount)
+                m_workerStats.resize(scratchCount);
+            for (uint32_t i = 0; i < scratchCount; ++i)
+                m_workerStats[i] = Stats{};
 
             auto processRow = [&](uint32_t workerIndex, uint32_t row)
             {
                 if (row >= store->size())
                     return;
 
-                auto &scratch = m_workerScratch[std::min(workerIndex, scratchCount - 1u)];
+                const uint32_t workerSlot = std::min(workerIndex, scratchCount - 1u);
+                auto &scratch = m_workerScratch[workerSlot];
+                auto &workerStats = m_workerStats[workerSlot];
 
                 const Engine::ModelHandle handle = renderModels[row].handle;
-                Engine::ModelAsset *asset = m_assets->getModel(handle);
                 auto &out = posePalettes[row];
+
+                const auto &visibility = visibilityStates[row];
+                const bool visible = visibility.visible;
+                const bool justBecameVisible = visibility.visible && !visibility.wasVisibleLastFrame;
+                const bool modelChanged =
+                    (out.sourceModelId != handle.id) ||
+                    (out.sourceModelGeneration != handle.generation);
+                const bool shouldEvaluate = modelChanged || justBecameVisible || visible;
+
+                if (!shouldEvaluate)
+                {
+                    workerStats.skippedInvisible += 1u;
+                    return;
+                }
+
+                if (visible)
+                    workerStats.visibleEvaluated += 1u;
+                if (justBecameVisible)
+                    workerStats.justBecameVisible += 1u;
+
+                Engine::ModelAsset *asset = m_assets->getModel(handle);
 
                 // Any write to the palette counts as a new version.
                 out.poseVersion += 1u;
                 out.lastUpdatedFrame = m_frameCounter;
+                out.sourceModelId = handle.id;
+                out.sourceModelGeneration = handle.generation;
+                workerStats.evaluated += 1u;
 
                 if (!asset || asset->nodes.empty())
                 {
@@ -148,10 +187,40 @@ public:
                 for (uint32_t row : dirtyRows)
                     processRow(0u, row);
             }
+
+            for (uint32_t i = 0; i < scratchCount; ++i)
+            {
+                m_lastStats.evaluated += m_workerStats[i].evaluated;
+                m_lastStats.visibleEvaluated += m_workerStats[i].visibleEvaluated;
+                m_lastStats.justBecameVisible += m_workerStats[i].justBecameVisible;
+                m_lastStats.skippedInvisible += m_workerStats[i].skippedInvisible;
+            }
         }
+
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+        if ((m_frameCounter % 120u) == 0u)
+        {
+            std::cout << "[PoseUpdateSystem] frame=" << m_frameCounter
+                      << " dirtyCandidates=" << m_lastStats.dirtyCandidates
+                      << " evaluated=" << m_lastStats.evaluated
+                      << " visibleEvaluated=" << m_lastStats.visibleEvaluated
+                      << " justBecameVisible=" << m_lastStats.justBecameVisible
+                      << " skippedInvisible=" << m_lastStats.skippedInvisible
+                      << "\n";
+        }
+#endif
     }
 
 private:
+    struct Stats
+    {
+        uint32_t dirtyCandidates = 0;
+        uint32_t evaluated = 0;
+        uint32_t visibleEvaluated = 0;
+        uint32_t justBecameVisible = 0;
+        uint32_t skippedInvisible = 0;
+    };
+
     struct WorkerScratch
     {
         std::vector<Engine::ModelAsset::NodeTRS> trs;
@@ -165,8 +234,11 @@ private:
     Engine::ECS::QueryId m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     uint32_t m_renderAnimId = Engine::ECS::ComponentRegistry::InvalidID;
     uint32_t m_renderModelId = Engine::ECS::ComponentRegistry::InvalidID;
+    uint32_t m_visibilityStateId = Engine::ECS::ComponentRegistry::InvalidID;
 
     std::vector<WorkerScratch> m_workerScratch;
+    std::vector<Stats> m_workerStats;
 
     uint32_t m_frameCounter = 0;
+    Stats m_lastStats{};
 };

@@ -32,6 +32,7 @@ public:
         Engine::ECS::SystemBase::buildMasks(registry);
         m_positionId = registry.ensureId("Position");
         m_facingId = registry.ensureId("Facing");
+        m_renderTransformId = registry.ensureId("RenderTransform");
         m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     }
 
@@ -98,6 +99,7 @@ public:
                 auto &rt = transforms[row];
                 rt.world = world;
                 rt.transformVersion += 1u;
+                ecs.markDirty(m_renderTransformId, archetypeId, row);
             };
 
             if (ecs.jobSystem && dirtyRows.size() >= PARALLEL_DIRTY_ROW_THRESHOLD)
@@ -117,6 +119,7 @@ private:
     Engine::ECS::QueryId m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     uint32_t m_positionId = Engine::ECS::ComponentRegistry::InvalidID;
     uint32_t m_facingId = Engine::ECS::ComponentRegistry::InvalidID;
+    uint32_t m_renderTransformId = Engine::ECS::ComponentRegistry::InvalidID;
 
     std::vector<Engine::ECS::Facing> m_dummyFacings;
 };
