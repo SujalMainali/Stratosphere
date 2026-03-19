@@ -14,6 +14,7 @@
 #include "systems/LocomotionAnimationControllerSystem.h"
 #include "ECS/systems/Animation/AnimationPlaybackSystem.h"
 #include "ECS/systems/PoseUpdateSystem.h"
+#include "ECS/systems/VisibleRenderGatherSystem.h"
 #include "ECS/systems/RenderSystem.h"
 #include "ECS/systems/SpatialIndexSystem.h"
 #include "ECS/systems/LocalAvoidanceSystem.h"
@@ -74,6 +75,8 @@ namespace Sample
         AnimationPlaybackSystem m_animPlayback;
 
         PoseUpdateSystem m_poseUpdate;
+
+        VisibleRenderGatherSystem m_visibleRenderGather;
 
         RenderSystem m_renderModel;
     };

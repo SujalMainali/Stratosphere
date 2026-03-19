@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ECS/SystemFormat.h"
+#include "ECS/VisibleRender.h"
 
 #include "assets/AssetManager.h"
 
@@ -11,6 +12,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -30,8 +32,7 @@ public:
         // RenderModel provides the model handle.
         // PosePalette provides per-entity node/joint palettes.
         // RenderTransform provides the cached world matrix.
-        // VisibilityState provides visibility information for culling.
-        setRequiredNames({"RenderModel", "PosePalette", "RenderTransform", "VisibilityState"});
+        setRequiredNames({"RenderModel", "PosePalette", "RenderTransform"});
         setExcludedNames({"Disabled", "Dead"});
     }
 
@@ -41,24 +42,19 @@ public:
     void buildMasks(Engine::ECS::ComponentRegistry &registry) override
     {
         Engine::ECS::SystemBase::buildMasks(registry);
-        m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     }
 
     void setRenderer(Engine::Renderer *renderer) { m_renderer = renderer; }
     void setCamera(Engine::Camera *camera) { m_camera = camera; }
+    void setVisibleBuckets(const Engine::ECS::VisibleRenderBuckets *buckets) { m_visibleBuckets = buckets; }
 
     void update(Engine::ECS::ECSContext &ecs, float dt) override
     {
         (void)dt;
-        if (!m_assets || !m_renderer || !m_camera)
+        if (!m_assets || !m_renderer || !m_camera || !m_visibleBuckets)
             return;
 
         Stats frameStats{};
-
-        auto keyFromHandle = [](const Engine::ModelHandle &h) -> uint64_t
-        {
-            return (static_cast<uint64_t>(h.generation) << 32) | static_cast<uint64_t>(h.id);
-        };
 
         auto fnv1aMixU32 = [](uint64_t h, uint32_t v) -> uint64_t
         {
@@ -76,98 +72,79 @@ public:
 
         m_frameCounter += 1u;
 
-        if (m_queryId == Engine::ECS::QueryManager::InvalidQuery)
-            m_queryId = ecs.queries.createQuery(required(), excluded(), ecs.stores);
+        frameStats.totalCandidates = m_visibleBuckets->totalRenderables;
+        frameStats.visibleProcessed = m_visibleBuckets->visibleRenderables;
 
-        const auto &q = ecs.queries.get(m_queryId);
-        for (uint32_t archetypeId : q.matchingArchetypeIds)
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+        const auto tBuild0 = std::chrono::high_resolution_clock::now();
+#endif
+
+        // Build render batches from explicit visible buckets.
+        for (uint64_t key : m_visibleBuckets->activeModelKeys)
         {
-            auto *ptr = ecs.stores.get(archetypeId);
-            if (!ptr)
+            auto itBucket = m_visibleBuckets->byModel.find(key);
+            if (itBucket == m_visibleBuckets->byModel.end())
                 continue;
 
-            auto &store = *ptr;
-            if (!store.signature().containsAll(required()))
+            const Engine::ECS::VisibleModelBucket &bucket = itBucket->second;
+            if (bucket.lastUsedFrame != m_visibleBuckets->frame)
                 continue;
-            if (!store.signature().containsNone(excluded()))
-                continue;
-            if (!store.hasRenderModel())
-                continue;
-            if (!store.hasPosePalette())
-                continue;
-            if (!store.hasRenderTransform())
-                continue;
-            if (!store.hasVisibilityState())
+            if (bucket.refs.empty())
                 continue;
 
-            auto &renderModels = store.renderModels();
-            auto &renderTransforms = store.renderTransforms();
-            auto &posePalettes = store.posePalettes();
-            auto &visibilityStates = store.visibilityState();
-            auto &entities = store.entities();
-            const uint32_t n = store.size();
-            frameStats.totalCandidates += n;
+            const Engine::ModelHandle handle = bucket.handle;
+            Engine::ModelAsset *asset = m_assets->getModel(handle);
+            if (!asset)
+                continue;
 
-            for (uint32_t row = 0; row < n; ++row)
+            auto &batch = m_batchesByModel[key];
+            if (batch.lastUsedFrame != m_frameCounter)
             {
-                // Skip invisible entities
-                if (!visibilityStates[row].visible)
-                {
-                    frameStats.invisibleSkipped += 1u;
+                batch.lastUsedFrame = m_frameCounter;
+                batch.handle = handle;
+
+                batch.contentHash = 1469598103934665603ull;
+                batch.contentHash = fnv1aMixU32(batch.contentHash, static_cast<uint32_t>(handle.id));
+                batch.contentHash = fnv1aMixU32(batch.contentHash, static_cast<uint32_t>(handle.generation));
+
+                batch.instanceWorlds.clear();
+                batch.nodePalette.clear();
+                batch.jointPalette.clear();
+
+                // Default counts from the asset; PosePalette data is validated per instance.
+                batch.nodeCount = static_cast<uint32_t>(asset->nodes.size());
+                batch.jointCount = asset->totalJointCount;
+            }
+
+            if (batch.nodeCount == 0)
+                continue;
+
+            for (const Engine::ECS::VisibleRenderRef &ref : bucket.refs)
+            {
+                auto *storePtr = ecs.stores.get(ref.archetypeId);
+                if (!storePtr)
                     continue;
-                }
-
-                frameStats.visibleProcessed += 1u;
-
-                const Engine::ModelHandle handle = renderModels[row].handle;
-                Engine::ModelAsset *asset = m_assets->getModel(handle);
-                if (!asset)
+                auto &store = *storePtr;
+                if (ref.row >= store.size())
                     continue;
-
-                const uint64_t key = keyFromHandle(handle);
-
-                auto &batch = m_batchesByModel[key];
-                if (batch.lastUsedFrame != m_frameCounter)
-                {
-                    batch.lastUsedFrame = m_frameCounter;
-                    batch.handle = handle;
-
-                    batch.contentHash = 1469598103934665603ull;
-                    batch.contentHash = fnv1aMixU32(batch.contentHash, static_cast<uint32_t>(handle.id));
-                    batch.contentHash = fnv1aMixU32(batch.contentHash, static_cast<uint32_t>(handle.generation));
-
-                    batch.instanceWorlds.clear();
-                    batch.nodePalette.clear();
-                    batch.jointPalette.clear();
-
-                    // Prefer counts from PosePalette (it is what we will upload).
-                    batch.nodeCount = posePalettes[row].nodeCount;
-                    batch.jointCount = posePalettes[row].jointCount;
-                    if (batch.nodeCount == 0)
-                        batch.nodeCount = static_cast<uint32_t>(asset->nodes.size());
-                    if (batch.jointCount == 0)
-                        batch.jointCount = asset->totalJointCount;
-                }
-
-                if (batch.nodeCount == 0)
+                if (!store.hasRenderTransform() || !store.hasPosePalette())
                     continue;
 
-                // World matrix comes from RenderTransform (updated by RenderTransformUpdateSystem).
-                const glm::mat4 &world = renderTransforms[row].world;
+                const auto &renderTransforms = store.renderTransforms();
+                const auto &posePalettes = store.posePalettes();
 
-                // Hash the semantic inputs that should affect rendering.
-                // This lets us skip re-uploading identical instance/palette data to the GPU.
-                const auto &e = entities[row];
-                batch.contentHash = fnv1aMixU32(batch.contentHash, e.index);
-                batch.contentHash = fnv1aMixU32(batch.contentHash, e.generation);
-                batch.contentHash = fnv1aMixU32(batch.contentHash, renderTransforms[row].transformVersion);
-                batch.contentHash = fnv1aMixU32(batch.contentHash, posePalettes[row].poseVersion);
+                const glm::mat4 &world = renderTransforms[ref.row].world;
+
+                // Hash semantic inputs that affect instance data.
+                batch.contentHash = fnv1aMixU32(batch.contentHash, ref.entity.index);
+                batch.contentHash = fnv1aMixU32(batch.contentHash, ref.entity.generation);
+                batch.contentHash = fnv1aMixU32(batch.contentHash, ref.transformVersion);
+                batch.contentHash = fnv1aMixU32(batch.contentHash, ref.poseVersion);
 
                 batch.instanceWorlds.emplace_back(world);
                 frameStats.submittedInstances += 1u;
 
-                // Palettes come from PosePalette component.
-                const auto &pose = posePalettes[row];
+                const auto &pose = posePalettes[ref.row];
                 if (pose.nodeCount == batch.nodeCount && pose.nodePalette.size() == static_cast<size_t>(batch.nodeCount))
                 {
                     batch.nodePalette.insert(batch.nodePalette.end(), pose.nodePalette.begin(), pose.nodePalette.end());
@@ -184,10 +161,12 @@ public:
                     else
                         batch.jointPalette.insert(batch.jointPalette.end(), batch.jointCount, glm::mat4(1.0f));
                 }
-
-                (void)asset;
             }
         }
+
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+        const auto tBuild1 = std::chrono::high_resolution_clock::now();
+#endif
 
         // Create/update passes for models that have instances this frame.
         for (auto &kv : m_batchesByModel)
@@ -247,11 +226,16 @@ public:
 #if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
         if ((m_frameCounter % 120u) == 0u)
         {
+            const auto tSubmit1 = std::chrono::high_resolution_clock::now();
+            const double buildMs = std::chrono::duration<double, std::milli>(tBuild1 - tBuild0).count();
+            const double submitMs = std::chrono::duration<double, std::milli>(tSubmit1 - tBuild1).count();
             std::cout << "[RenderSystem] frame=" << m_frameCounter
                       << " candidates=" << frameStats.totalCandidates
                       << " visible=" << frameStats.visibleProcessed
                       << " submitted=" << frameStats.submittedInstances
                       << " skippedInvisible=" << frameStats.invisibleSkipped
+                      << " buildMs=" << buildMs
+                      << " submitMs=" << submitMs
                       << "\n";
         }
 #endif
@@ -290,9 +274,9 @@ private:
     Engine::AssetManager *m_assets = nullptr; // not owned
     Engine::Renderer *m_renderer = nullptr;   // not owned
     Engine::Camera *m_camera = nullptr;       // not owned
+    const Engine::ECS::VisibleRenderBuckets *m_visibleBuckets = nullptr; // not owned
 
     std::unordered_map<uint64_t, PassEntry> m_passes;
     std::unordered_map<uint64_t, PerModelBatch> m_batchesByModel;
     uint32_t m_frameCounter = 0;
-    Engine::ECS::QueryId m_queryId = Engine::ECS::QueryManager::InvalidQuery;
 };

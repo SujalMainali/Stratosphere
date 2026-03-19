@@ -1,8 +1,11 @@
 #pragma once
 
 #include "ECS/systems/RenderTransformUpdateSystem.h"
+#include "ECS/systems/RenderBoundsUpdateSystem.h"
+#include "ECS/systems/VisibilityCullingSystem.h"
 #include "ECS/systems/Animation/AnimationPlaybackSystem.h"
 #include "ECS/systems/PoseUpdateSystem.h"
+#include "ECS/systems/VisibleRenderGatherSystem.h"
 #include "ECS/systems/RenderSystem.h"
 
 namespace Engine
@@ -35,8 +38,11 @@ namespace Editor
         bool m_initialized = false;
 
         RenderTransformUpdateSystem m_renderTransform;
+        RenderBoundsUpdateSystem m_renderBoundsUpdate;
+        VisibilityCullingSystem m_visibilityCulling;
         AnimationPlaybackSystem m_animPlayback;
         PoseUpdateSystem m_poseUpdate;
+        VisibleRenderGatherSystem m_visibleRenderGather;
         RenderSystem m_render;
     };
 }

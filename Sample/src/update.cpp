@@ -35,7 +35,10 @@ namespace Sample
                 m_locomotionAnim.buildMasks(registry);
                 m_animPlayback.buildMasks(registry);
                 m_poseUpdate.buildMasks(registry);
+                m_visibleRenderGather.buildMasks(registry);
                 m_renderModel.buildMasks(registry);
+
+                m_renderModel.setVisibleBuckets(&m_visibleRenderGather.buckets());
 
                 // Initialize NavGrid (cover map area)
                 m_navGrid.rebuild(2.0f, -400.0f, -400.0f, 400.0f, 400.0f);
@@ -92,6 +95,9 @@ namespace Sample
 
                 // 12. Pose update
                 m_poseUpdate.update(ecs, dtSeconds);
+
+                // 12a. Build explicit visible render buckets
+                m_visibleRenderGather.update(ecs, dtSeconds);
 
                 // 13. Render
                 m_renderModel.update(ecs, dtSeconds);
