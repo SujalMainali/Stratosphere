@@ -27,11 +27,6 @@ namespace Engine
         outM[15] = 1.0f;
     }
 
-    static glm::mat4 identityMat4()
-    {
-        return glm::mat4(1.0f);
-    }
-
     SModelRenderPassModule::~SModelRenderPassModule()
     {
         // resources freed in onDestroy
@@ -219,44 +214,119 @@ namespace Engine
         std::memcpy(m_pc.model, m16, sizeof(float) * 16);
     }
 
-    void SModelRenderPassModule::setInstances(const glm::mat4 *instanceWorlds, uint32_t count)
+    void SModelRenderPassModule::setSlotLayout(uint32_t nodeCount, uint32_t jointCount)
     {
-        m_instanceWorlds.clear();
-        m_instancesVersion += 1u;
-        if (!instanceWorlds || count == 0)
+        const uint32_t safeNodeCount = (nodeCount > 0) ? nodeCount : 1u;
+        const bool changed = (m_slotNodeCount != safeNodeCount) || (m_slotJointCount != jointCount);
+        m_slotNodeCount = safeNodeCount;
+        m_slotJointCount = jointCount;
+
+        if (!changed)
             return;
 
-        m_instanceWorlds.assign(instanceWorlds, instanceWorlds + count);
+        // Layout changes require re-upload for any active slots.
+        const uint32_t slots = static_cast<uint32_t>(m_slotWorlds.size());
+
+        const size_t nodeTotal = static_cast<size_t>(slots) * static_cast<size_t>(m_slotNodeCount);
+        m_nodePalette.assign(nodeTotal, glm::mat4(1.0f));
+
+        const uint32_t jointStride = std::max<uint32_t>(m_slotJointCount, 1u);
+        const size_t jointTotal = static_cast<size_t>(slots) * static_cast<size_t>(jointStride);
+        m_jointPalette.assign(jointTotal, glm::mat4(1.0f));
+
+        // Force pose uploads (per-slot) on next record for all frames.
+        m_poseEpochCounter += 1u;
+        m_slotPoseEpoch.assign(slots, m_poseEpochCounter);
+        for (auto &cf : m_cameraFrames)
+        {
+            cf.uploadedPoseEpoch.clear();
+        }
     }
 
-    void SModelRenderPassModule::setNodePalette(const glm::mat4 *nodeGlobals, uint32_t instanceCount, uint32_t nodeCount)
+    void SModelRenderPassModule::ensureSlotCapacity(uint32_t slotCapacity)
     {
-        m_nodePalette.clear();
-        m_paletteInstanceCount = 0;
-        m_paletteNodeCount = 0;
-        m_nodePaletteVersion += 1u;
-
-        if (!nodeGlobals || instanceCount == 0 || nodeCount == 0)
+        const uint32_t cur = static_cast<uint32_t>(m_slotWorlds.size());
+        if (slotCapacity <= cur)
             return;
 
-        m_paletteInstanceCount = instanceCount;
-        m_paletteNodeCount = nodeCount;
-        const size_t total = static_cast<size_t>(instanceCount) * static_cast<size_t>(nodeCount);
-        m_nodePalette.assign(nodeGlobals, nodeGlobals + total);
+        m_slotWorlds.resize(slotCapacity, glm::mat4(1.0f));
+        m_slotTransformEpoch.resize(slotCapacity, 1u);
+        m_slotPoseEpoch.resize(slotCapacity, 1u);
+
+        const size_t nodeTotal = static_cast<size_t>(slotCapacity) * static_cast<size_t>(std::max<uint32_t>(m_slotNodeCount, 1u));
+        if (m_nodePalette.size() < nodeTotal)
+            m_nodePalette.resize(nodeTotal, glm::mat4(1.0f));
+
+        const uint32_t jointStride = std::max<uint32_t>(m_slotJointCount, 1u);
+        const size_t jointTotal = static_cast<size_t>(slotCapacity) * static_cast<size_t>(jointStride);
+        if (m_jointPalette.size() < jointTotal)
+            m_jointPalette.resize(jointTotal, glm::mat4(1.0f));
+
+        for (auto &cf : m_cameraFrames)
+        {
+            cf.uploadedTransformEpoch.resize(slotCapacity, 0u);
+            cf.uploadedPoseEpoch.resize(slotCapacity, 0u);
+        }
     }
 
-    void SModelRenderPassModule::setJointPalette(const glm::mat4 *jointMatrices, uint32_t instanceCount, uint32_t jointCount)
+    void SModelRenderPassModule::setActiveSlots(const uint32_t *slotIndices, uint32_t count)
     {
-        m_jointPalette.clear();
-        m_jointPaletteJointCount = 0;
-        m_jointPaletteVersion += 1u;
+        std::vector<uint32_t> next;
+        next.reserve(count);
+        if (slotIndices && count > 0)
+            next.assign(slotIndices, slotIndices + count);
 
-        if (!jointMatrices || instanceCount == 0 || jointCount == 0)
+        if (next == m_activeSlots)
             return;
 
-        m_jointPaletteJointCount = jointCount;
-        const size_t total = static_cast<size_t>(instanceCount) * static_cast<size_t>(jointCount);
-        m_jointPalette.assign(jointMatrices, jointMatrices + total);
+        m_activeSlots = std::move(next);
+        m_activeSlotsVersion += 1u;
+    }
+
+    void SModelRenderPassModule::setSlotWorld(uint32_t slotIndex, const glm::mat4 &world)
+    {
+        ensureSlotCapacity(slotIndex + 1u);
+        m_slotWorlds[slotIndex] = world;
+        m_transformEpochCounter += 1u;
+        m_slotTransformEpoch[slotIndex] = m_transformEpochCounter;
+    }
+
+    void SModelRenderPassModule::setSlotPose(uint32_t slotIndex,
+                                             const glm::mat4 *nodeGlobals, uint32_t nodeCount,
+                                             const glm::mat4 *jointMatrices, uint32_t jointCount)
+    {
+        ensureSlotCapacity(slotIndex + 1u);
+
+        // Node palette
+        const uint32_t safeNodeCount = std::max<uint32_t>(m_slotNodeCount, 1u);
+        const size_t nodeBase = static_cast<size_t>(slotIndex) * static_cast<size_t>(safeNodeCount);
+        if (nodeGlobals && nodeCount == safeNodeCount)
+        {
+            std::memcpy(m_nodePalette.data() + nodeBase, nodeGlobals, sizeof(glm::mat4) * safeNodeCount);
+        }
+        else
+        {
+            std::fill(m_nodePalette.begin() + static_cast<std::ptrdiff_t>(nodeBase),
+                      m_nodePalette.begin() + static_cast<std::ptrdiff_t>(nodeBase + safeNodeCount),
+                      glm::mat4(1.0f));
+        }
+
+        // Joint palette
+        const uint32_t jointStride = std::max<uint32_t>(m_slotJointCount, 1u);
+        const size_t jointBase = static_cast<size_t>(slotIndex) * static_cast<size_t>(jointStride);
+        if (m_slotJointCount > 0 && jointMatrices && jointCount == m_slotJointCount)
+        {
+            std::memcpy(m_jointPalette.data() + jointBase, jointMatrices, sizeof(glm::mat4) * jointStride);
+        }
+        else
+        {
+            std::fill(m_jointPalette.begin() + static_cast<std::ptrdiff_t>(jointBase),
+                      m_jointPalette.begin() + static_cast<std::ptrdiff_t>(jointBase + jointStride),
+                      glm::mat4(1.0f));
+        }
+
+        m_poseEpochCounter += 1u;
+        m_slotPoseEpoch[slotIndex] = m_poseEpochCounter;
     }
 
     bool SModelRenderPassModule::refreshModelMatrix()
@@ -376,11 +446,6 @@ namespace Engine
             throw std::runtime_error("SModelRenderPassModule: failed to create camera resources");
         }
 
-        if (!createInstanceResources(ctx, frameCount > 0 ? frameCount : 1))
-        {
-            throw std::runtime_error("SModelRenderPassModule: failed to create instance resources");
-        }
-
         if (!createMaterialResources(ctx))
         {
             throw std::runtime_error("SModelRenderPassModule: failed to create material resources");
@@ -439,10 +504,22 @@ namespace Engine
         jointPaletteBinding.descriptorCount = 1;
         jointPaletteBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+        VkDescriptorSetLayoutBinding instanceWorldBinding{};
+        instanceWorldBinding.binding = 3;
+        instanceWorldBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        instanceWorldBinding.descriptorCount = 1;
+        instanceWorldBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+        VkDescriptorSetLayoutBinding activeSlotsBinding{};
+        activeSlotsBinding.binding = 4;
+        activeSlotsBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        activeSlotsBinding.descriptorCount = 1;
+        activeSlotsBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
         VkDescriptorSetLayoutCreateInfo dsl{};
         dsl.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        VkDescriptorSetLayoutBinding bindings[3] = {camBinding, paletteBinding, jointPaletteBinding};
-        dsl.bindingCount = 3;
+        VkDescriptorSetLayoutBinding bindings[5] = {camBinding, paletteBinding, jointPaletteBinding, instanceWorldBinding, activeSlotsBinding};
+        dsl.bindingCount = 5;
         dsl.pBindings = bindings;
 
         if (vkCreateDescriptorSetLayout(ctx.GetDevice(), &dsl, nullptr, &m_cameraSetLayout) != VK_SUCCESS)
@@ -455,7 +532,7 @@ namespace Engine
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         poolSizes[0].descriptorCount = static_cast<uint32_t>(frameCount);
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[1].descriptorCount = static_cast<uint32_t>(frameCount) * 2u;
+        poolSizes[1].descriptorCount = static_cast<uint32_t>(frameCount) * 4u;
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -600,6 +677,72 @@ namespace Engine
             if (vkMapMemory(ctx.GetDevice(), cf.jointPaletteMemory, 0, VK_WHOLE_SIZE, 0, &cf.jointPaletteMapped) != VK_SUCCESS)
                 return false;
 
+            // Instance world SSBO (host-visible, coherent, persistently mapped)
+            constexpr uint32_t kDefaultInstanceWorldCapacitySlots = 256;
+            cf.instanceWorldCapacitySlots = kDefaultInstanceWorldCapacitySlots;
+
+            VkBufferCreateInfo iwinfo{};
+            iwinfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            iwinfo.size = static_cast<VkDeviceSize>(cf.instanceWorldCapacitySlots) * sizeof(glm::mat4);
+            iwinfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            iwinfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            if (vkCreateBuffer(ctx.GetDevice(), &iwinfo, nullptr, &cf.instanceWorldBuffer) != VK_SUCCESS)
+                return false;
+
+            VkMemoryRequirements iwMemReq{};
+            vkGetBufferMemoryRequirements(ctx.GetDevice(), cf.instanceWorldBuffer, &iwMemReq);
+
+            VkMemoryAllocateInfo iwMai{};
+            iwMai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            iwMai.allocationSize = iwMemReq.size;
+            uint32_t iwMemType = 0;
+            if (!findMemoryType(iwMemReq.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, iwMemType))
+                return false;
+            iwMai.memoryTypeIndex = iwMemType;
+
+            if (vkAllocateMemory(ctx.GetDevice(), &iwMai, nullptr, &cf.instanceWorldMemory) != VK_SUCCESS)
+                return false;
+
+            vkBindBufferMemory(ctx.GetDevice(), cf.instanceWorldBuffer, cf.instanceWorldMemory, 0);
+
+            cf.instanceWorldMapped = nullptr;
+            if (vkMapMemory(ctx.GetDevice(), cf.instanceWorldMemory, 0, VK_WHOLE_SIZE, 0, &cf.instanceWorldMapped) != VK_SUCCESS)
+                return false;
+
+            // Active slots SSBO (host-visible, coherent, persistently mapped)
+            constexpr uint32_t kDefaultActiveSlotsCapacity = 256;
+            cf.activeSlotsCapacity = kDefaultActiveSlotsCapacity;
+
+            VkBufferCreateInfo asInfo{};
+            asInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            asInfo.size = static_cast<VkDeviceSize>(cf.activeSlotsCapacity) * sizeof(uint32_t);
+            asInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            asInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            if (vkCreateBuffer(ctx.GetDevice(), &asInfo, nullptr, &cf.activeSlotsBuffer) != VK_SUCCESS)
+                return false;
+
+            VkMemoryRequirements asMemReq{};
+            vkGetBufferMemoryRequirements(ctx.GetDevice(), cf.activeSlotsBuffer, &asMemReq);
+
+            VkMemoryAllocateInfo asMai{};
+            asMai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            asMai.allocationSize = asMemReq.size;
+            uint32_t asMemType = 0;
+            if (!findMemoryType(asMemReq.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, asMemType))
+                return false;
+            asMai.memoryTypeIndex = asMemType;
+
+            if (vkAllocateMemory(ctx.GetDevice(), &asMai, nullptr, &cf.activeSlotsMemory) != VK_SUCCESS)
+                return false;
+
+            vkBindBufferMemory(ctx.GetDevice(), cf.activeSlotsBuffer, cf.activeSlotsMemory, 0);
+
+            cf.activeSlotsMapped = nullptr;
+            if (vkMapMemory(ctx.GetDevice(), cf.activeSlotsMemory, 0, VK_WHOLE_SIZE, 0, &cf.activeSlotsMapped) != VK_SUCCESS)
+                return false;
+
             VkDescriptorBufferInfo dbi{};
             dbi.buffer = cf.buffer;
             dbi.offset = 0;
@@ -615,7 +758,17 @@ namespace Engine
             jbi.offset = 0;
             jbi.range = static_cast<VkDeviceSize>(cf.jointPaletteCapacityMatrices) * sizeof(glm::mat4);
 
-            VkWriteDescriptorSet writes[3]{};
+            VkDescriptorBufferInfo iwbi{};
+            iwbi.buffer = cf.instanceWorldBuffer;
+            iwbi.offset = 0;
+            iwbi.range = static_cast<VkDeviceSize>(cf.instanceWorldCapacitySlots) * sizeof(glm::mat4);
+
+            VkDescriptorBufferInfo asbi{};
+            asbi.buffer = cf.activeSlotsBuffer;
+            asbi.offset = 0;
+            asbi.range = static_cast<VkDeviceSize>(cf.activeSlotsCapacity) * sizeof(uint32_t);
+
+            VkWriteDescriptorSet writes[5]{};
             writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[0].dstSet = cf.set;
             writes[0].dstBinding = 0;
@@ -640,7 +793,27 @@ namespace Engine
             writes[2].descriptorCount = 1;
             writes[2].pBufferInfo = &jbi;
 
-            vkUpdateDescriptorSets(ctx.GetDevice(), 3, writes, 0, nullptr);
+            writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[3].dstSet = cf.set;
+            writes[3].dstBinding = 3;
+            writes[3].dstArrayElement = 0;
+            writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[3].descriptorCount = 1;
+            writes[3].pBufferInfo = &iwbi;
+
+            writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[4].dstSet = cf.set;
+            writes[4].dstBinding = 4;
+            writes[4].dstArrayElement = 0;
+            writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[4].descriptorCount = 1;
+            writes[4].pBufferInfo = &asbi;
+
+            vkUpdateDescriptorSets(ctx.GetDevice(), 5, writes, 0, nullptr);
+
+            // Per-frame upload epoch tracking (resized by ensureSlotCapacity as needed).
+            cf.uploadedTransformEpoch.clear();
+            cf.uploadedPoseEpoch.clear();
         }
 
         return true;
@@ -668,6 +841,18 @@ namespace Engine
                 cf.jointPaletteMapped = nullptr;
             }
 
+            if (cf.instanceWorldMapped && cf.instanceWorldMemory != VK_NULL_HANDLE)
+            {
+                vkUnmapMemory(m_device, cf.instanceWorldMemory);
+                cf.instanceWorldMapped = nullptr;
+            }
+
+            if (cf.activeSlotsMapped && cf.activeSlotsMemory != VK_NULL_HANDLE)
+            {
+                vkUnmapMemory(m_device, cf.activeSlotsMemory);
+                cf.activeSlotsMapped = nullptr;
+            }
+
             if (cf.paletteBuffer != VK_NULL_HANDLE)
             {
                 vkDestroyBuffer(m_device, cf.paletteBuffer, nullptr);
@@ -692,6 +877,30 @@ namespace Engine
             }
             cf.jointPaletteCapacityMatrices = 0;
 
+            if (cf.instanceWorldBuffer != VK_NULL_HANDLE)
+            {
+                vkDestroyBuffer(m_device, cf.instanceWorldBuffer, nullptr);
+                cf.instanceWorldBuffer = VK_NULL_HANDLE;
+            }
+            if (cf.instanceWorldMemory != VK_NULL_HANDLE)
+            {
+                vkFreeMemory(m_device, cf.instanceWorldMemory, nullptr);
+                cf.instanceWorldMemory = VK_NULL_HANDLE;
+            }
+            cf.instanceWorldCapacitySlots = 0;
+
+            if (cf.activeSlotsBuffer != VK_NULL_HANDLE)
+            {
+                vkDestroyBuffer(m_device, cf.activeSlotsBuffer, nullptr);
+                cf.activeSlotsBuffer = VK_NULL_HANDLE;
+            }
+            if (cf.activeSlotsMemory != VK_NULL_HANDLE)
+            {
+                vkFreeMemory(m_device, cf.activeSlotsMemory, nullptr);
+                cf.activeSlotsMemory = VK_NULL_HANDLE;
+            }
+            cf.activeSlotsCapacity = 0;
+
             if (cf.buffer != VK_NULL_HANDLE)
             {
                 vkDestroyBuffer(m_device, cf.buffer, nullptr);
@@ -703,6 +912,9 @@ namespace Engine
                 cf.memory = VK_NULL_HANDLE;
             }
             cf.set = VK_NULL_HANDLE;
+
+            cf.uploadedTransformEpoch.clear();
+            cf.uploadedPoseEpoch.clear();
         }
         m_cameraFrames.clear();
 
@@ -792,7 +1004,8 @@ namespace Engine
             return false;
 
         frame.paletteCapacityMatrices = newCap;
-        frame.lastUploadedNodePaletteVersion = 0;
+        if (!frame.uploadedPoseEpoch.empty())
+            std::fill(frame.uploadedPoseEpoch.begin(), frame.uploadedPoseEpoch.end(), 0u);
 
         VkDescriptorBufferInfo pbi{};
         pbi.buffer = frame.paletteBuffer;
@@ -886,7 +1099,8 @@ namespace Engine
             return false;
 
         frame.jointPaletteCapacityMatrices = newCap;
-        frame.lastUploadedJointPaletteVersion = 0;
+        if (!frame.uploadedPoseEpoch.empty())
+            std::fill(frame.uploadedPoseEpoch.begin(), frame.uploadedPoseEpoch.end(), 0u);
 
         VkDescriptorBufferInfo jbi{};
         jbi.buffer = frame.jointPaletteBuffer;
@@ -906,128 +1120,33 @@ namespace Engine
         return true;
     }
 
-    bool SModelRenderPassModule::createInstanceResources(VulkanContext &ctx, size_t frameCount)
+    bool SModelRenderPassModule::ensureInstanceWorldCapacity(CameraFrame &frame, uint32_t neededSlots)
     {
-        destroyInstanceResources();
-
-        if (frameCount == 0)
-            frameCount = 1;
-
-        auto findMemoryType = [&](uint32_t typeFilter, VkMemoryPropertyFlags properties, uint32_t &typeIndex) -> bool
-        {
-            VkPhysicalDeviceMemoryProperties memProps{};
-            vkGetPhysicalDeviceMemoryProperties(ctx.GetPhysicalDevice(), &memProps);
-            for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i)
-            {
-                if ((typeFilter & (1u << i)) && (memProps.memoryTypes[i].propertyFlags & properties) == properties)
-                {
-                    typeIndex = i;
-                    return true;
-                }
-            }
-            return false;
-        };
-
-        m_instanceFrames.resize(frameCount);
-
-        // Start with a modest default capacity; grows on demand.
-        constexpr uint32_t kDefaultCapacity = 256;
-        const VkDeviceSize bufSize = static_cast<VkDeviceSize>(kDefaultCapacity) * sizeof(glm::mat4);
-
-        for (size_t i = 0; i < frameCount; ++i)
-        {
-            InstanceFrame &fr = m_instanceFrames[i];
-            fr.capacity = kDefaultCapacity;
-
-            VkBufferCreateInfo binfo{};
-            binfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            binfo.size = bufSize;
-            binfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-            binfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-            if (vkCreateBuffer(ctx.GetDevice(), &binfo, nullptr, &fr.buffer) != VK_SUCCESS)
-                return false;
-
-            VkMemoryRequirements memReq{};
-            vkGetBufferMemoryRequirements(ctx.GetDevice(), fr.buffer, &memReq);
-
-            VkMemoryAllocateInfo mai{};
-            mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-            mai.allocationSize = memReq.size;
-            uint32_t memType = 0;
-            if (!findMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memType))
-                return false;
-            mai.memoryTypeIndex = memType;
-
-            if (vkAllocateMemory(ctx.GetDevice(), &mai, nullptr, &fr.memory) != VK_SUCCESS)
-                return false;
-
-            vkBindBufferMemory(ctx.GetDevice(), fr.buffer, fr.memory, 0);
-
-            fr.mapped = nullptr;
-            if (vkMapMemory(ctx.GetDevice(), fr.memory, 0, VK_WHOLE_SIZE, 0, &fr.mapped) != VK_SUCCESS)
-                return false;
-        }
-
-        return true;
-    }
-
-    void SModelRenderPassModule::destroyInstanceResources()
-    {
-        if (m_device == VK_NULL_HANDLE)
-            return;
-
-        for (auto &fr : m_instanceFrames)
-        {
-            if (fr.mapped && fr.memory != VK_NULL_HANDLE)
-            {
-                vkUnmapMemory(m_device, fr.memory);
-                fr.mapped = nullptr;
-            }
-
-            if (fr.buffer != VK_NULL_HANDLE)
-            {
-                vkDestroyBuffer(m_device, fr.buffer, nullptr);
-                fr.buffer = VK_NULL_HANDLE;
-            }
-
-            if (fr.memory != VK_NULL_HANDLE)
-            {
-                vkFreeMemory(m_device, fr.memory, nullptr);
-                fr.memory = VK_NULL_HANDLE;
-            }
-
-            fr.capacity = 0;
-        }
-        m_instanceFrames.clear();
-    }
-
-    bool SModelRenderPassModule::ensureInstanceCapacity(InstanceFrame &frame, uint32_t needed)
-    {
-        if (needed <= frame.capacity)
+        if (neededSlots <= frame.instanceWorldCapacitySlots)
             return true;
         if (m_device == VK_NULL_HANDLE || m_physicalDevice == VK_NULL_HANDLE)
             return false;
+        if (frame.set == VK_NULL_HANDLE)
+            return false;
 
-        // Grow by doubling.
-        uint32_t newCap = std::max<uint32_t>(1u, frame.capacity);
-        while (newCap < needed)
+        uint32_t newCap = std::max<uint32_t>(1u, frame.instanceWorldCapacitySlots);
+        while (newCap < neededSlots)
             newCap *= 2u;
 
-        if (frame.mapped && frame.memory != VK_NULL_HANDLE)
+        if (frame.instanceWorldMapped && frame.instanceWorldMemory != VK_NULL_HANDLE)
         {
-            vkUnmapMemory(m_device, frame.memory);
-            frame.mapped = nullptr;
+            vkUnmapMemory(m_device, frame.instanceWorldMemory);
+            frame.instanceWorldMapped = nullptr;
         }
-        if (frame.buffer != VK_NULL_HANDLE)
+        if (frame.instanceWorldBuffer != VK_NULL_HANDLE)
         {
-            vkDestroyBuffer(m_device, frame.buffer, nullptr);
-            frame.buffer = VK_NULL_HANDLE;
+            vkDestroyBuffer(m_device, frame.instanceWorldBuffer, nullptr);
+            frame.instanceWorldBuffer = VK_NULL_HANDLE;
         }
-        if (frame.memory != VK_NULL_HANDLE)
+        if (frame.instanceWorldMemory != VK_NULL_HANDLE)
         {
-            vkFreeMemory(m_device, frame.memory, nullptr);
-            frame.memory = VK_NULL_HANDLE;
+            vkFreeMemory(m_device, frame.instanceWorldMemory, nullptr);
+            frame.instanceWorldMemory = VK_NULL_HANDLE;
         }
 
         auto findMemoryType = [&](uint32_t typeFilter, VkMemoryPropertyFlags properties, uint32_t &typeIndex) -> bool
@@ -1045,18 +1164,17 @@ namespace Engine
             return false;
         };
 
-        const VkDeviceSize bufSize = static_cast<VkDeviceSize>(newCap) * sizeof(glm::mat4);
         VkBufferCreateInfo binfo{};
         binfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        binfo.size = bufSize;
-        binfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        binfo.size = static_cast<VkDeviceSize>(newCap) * sizeof(glm::mat4);
+        binfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
         binfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        if (vkCreateBuffer(m_device, &binfo, nullptr, &frame.buffer) != VK_SUCCESS)
+        if (vkCreateBuffer(m_device, &binfo, nullptr, &frame.instanceWorldBuffer) != VK_SUCCESS)
             return false;
 
         VkMemoryRequirements memReq{};
-        vkGetBufferMemoryRequirements(m_device, frame.buffer, &memReq);
+        vkGetBufferMemoryRequirements(m_device, frame.instanceWorldBuffer, &memReq);
 
         VkMemoryAllocateInfo mai{};
         mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -1066,17 +1184,126 @@ namespace Engine
             return false;
         mai.memoryTypeIndex = memType;
 
-        if (vkAllocateMemory(m_device, &mai, nullptr, &frame.memory) != VK_SUCCESS)
+        if (vkAllocateMemory(m_device, &mai, nullptr, &frame.instanceWorldMemory) != VK_SUCCESS)
             return false;
 
-        vkBindBufferMemory(m_device, frame.buffer, frame.memory, 0);
+        vkBindBufferMemory(m_device, frame.instanceWorldBuffer, frame.instanceWorldMemory, 0);
 
-        frame.mapped = nullptr;
-        if (vkMapMemory(m_device, frame.memory, 0, VK_WHOLE_SIZE, 0, &frame.mapped) != VK_SUCCESS)
+        frame.instanceWorldMapped = nullptr;
+        if (vkMapMemory(m_device, frame.instanceWorldMemory, 0, VK_WHOLE_SIZE, 0, &frame.instanceWorldMapped) != VK_SUCCESS)
             return false;
 
-        frame.capacity = newCap;
-        frame.lastUploadedInstancesVersion = 0;
+        frame.instanceWorldCapacitySlots = newCap;
+        if (!frame.uploadedTransformEpoch.empty())
+            std::fill(frame.uploadedTransformEpoch.begin(), frame.uploadedTransformEpoch.end(), 0u);
+
+        VkDescriptorBufferInfo bi{};
+        bi.buffer = frame.instanceWorldBuffer;
+        bi.offset = 0;
+        bi.range = static_cast<VkDeviceSize>(frame.instanceWorldCapacitySlots) * sizeof(glm::mat4);
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = frame.set;
+        write.dstBinding = 3;
+        write.dstArrayElement = 0;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write.descriptorCount = 1;
+        write.pBufferInfo = &bi;
+        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+        return true;
+    }
+
+    bool SModelRenderPassModule::ensureActiveSlotsCapacity(CameraFrame &frame, uint32_t needed)
+    {
+        if (needed <= frame.activeSlotsCapacity)
+            return true;
+        if (m_device == VK_NULL_HANDLE || m_physicalDevice == VK_NULL_HANDLE)
+            return false;
+        if (frame.set == VK_NULL_HANDLE)
+            return false;
+
+        uint32_t newCap = std::max<uint32_t>(1u, frame.activeSlotsCapacity);
+        while (newCap < needed)
+            newCap *= 2u;
+
+        if (frame.activeSlotsMapped && frame.activeSlotsMemory != VK_NULL_HANDLE)
+        {
+            vkUnmapMemory(m_device, frame.activeSlotsMemory);
+            frame.activeSlotsMapped = nullptr;
+        }
+        if (frame.activeSlotsBuffer != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(m_device, frame.activeSlotsBuffer, nullptr);
+            frame.activeSlotsBuffer = VK_NULL_HANDLE;
+        }
+        if (frame.activeSlotsMemory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(m_device, frame.activeSlotsMemory, nullptr);
+            frame.activeSlotsMemory = VK_NULL_HANDLE;
+        }
+
+        auto findMemoryType = [&](uint32_t typeFilter, VkMemoryPropertyFlags properties, uint32_t &typeIndex) -> bool
+        {
+            VkPhysicalDeviceMemoryProperties memProps{};
+            vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProps);
+            for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i)
+            {
+                if ((typeFilter & (1u << i)) && (memProps.memoryTypes[i].propertyFlags & properties) == properties)
+                {
+                    typeIndex = i;
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        VkBufferCreateInfo binfo{};
+        binfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        binfo.size = static_cast<VkDeviceSize>(newCap) * sizeof(uint32_t);
+        binfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        binfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateBuffer(m_device, &binfo, nullptr, &frame.activeSlotsBuffer) != VK_SUCCESS)
+            return false;
+
+        VkMemoryRequirements memReq{};
+        vkGetBufferMemoryRequirements(m_device, frame.activeSlotsBuffer, &memReq);
+
+        VkMemoryAllocateInfo mai{};
+        mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        mai.allocationSize = memReq.size;
+        uint32_t memType = 0;
+        if (!findMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memType))
+            return false;
+        mai.memoryTypeIndex = memType;
+
+        if (vkAllocateMemory(m_device, &mai, nullptr, &frame.activeSlotsMemory) != VK_SUCCESS)
+            return false;
+
+        vkBindBufferMemory(m_device, frame.activeSlotsBuffer, frame.activeSlotsMemory, 0);
+
+        frame.activeSlotsMapped = nullptr;
+        if (vkMapMemory(m_device, frame.activeSlotsMemory, 0, VK_WHOLE_SIZE, 0, &frame.activeSlotsMapped) != VK_SUCCESS)
+            return false;
+
+        frame.activeSlotsCapacity = newCap;
+        frame.lastUploadedActiveSlotsVersion = 0;
+
+        VkDescriptorBufferInfo bi{};
+        bi.buffer = frame.activeSlotsBuffer;
+        bi.offset = 0;
+        bi.range = static_cast<VkDeviceSize>(frame.activeSlotsCapacity) * sizeof(uint32_t);
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = frame.set;
+        write.dstBinding = 4;
+        write.dstArrayElement = 0;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write.descriptorCount = 1;
+        write.pBufferInfo = &bi;
+        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
         return true;
     }
 
@@ -1141,17 +1368,13 @@ namespace Engine
 
         // Vertex input:
         //  binding 0: VertexPNTTJW (72 bytes)
-        //  binding 1: Instance mat4 (64 bytes), advanced per-instance
-        std::array<VkVertexInputBindingDescription, 2> bindingDescs{};
+        // Instance data comes from SSBOs via slot indirection (no instanced vertex attributes).
+        std::array<VkVertexInputBindingDescription, 1> bindingDescs{};
         bindingDescs[0].binding = 0;
         bindingDescs[0].stride = 72;
         bindingDescs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        bindingDescs[1].binding = 1;
-        bindingDescs[1].stride = sizeof(glm::mat4);
-        bindingDescs[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
-
-        std::array<VkVertexInputAttributeDescription, 10> attrs{};
+        std::array<VkVertexInputAttributeDescription, 6> attrs{};
         attrs[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};     // pos
         attrs[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12};    // normal
         attrs[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, 24};       // uv0
@@ -1160,12 +1383,6 @@ namespace Engine
         // Skinning inputs
         attrs[4] = {8, 0, VK_FORMAT_R16G16B16A16_UINT, 48};   // joints (u16x4)
         attrs[5] = {9, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 56}; // weights (f32x4)
-
-        // mat4 consumes 4 locations (vec4 columns)
-        attrs[6] = {4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0};
-        attrs[7] = {5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16};
-        attrs[8] = {6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32};
-        attrs[9] = {7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48};
 
         VkPipelineVertexInputStateCreateInfo vi{};
         vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -1286,92 +1503,82 @@ namespace Engine
             std::memcpy(camFrame->mapped, &ubo, sizeof(CameraUBO));
         }
 
-        // Update instance buffer for this frame
-        const uint32_t instIndex = (!m_instanceFrames.empty()) ? (frameCtx.frameIndex % static_cast<uint32_t>(m_instanceFrames.size())) : 0;
-        InstanceFrame *instFrame = (!m_instanceFrames.empty()) ? &m_instanceFrames[instIndex] : nullptr;
+        const uint32_t instanceCount = static_cast<uint32_t>(m_activeSlots.size());
+        if (instanceCount == 0)
+            return;
 
-        const uint32_t instanceCount = m_instanceWorlds.empty() ? 1u : static_cast<uint32_t>(m_instanceWorlds.size());
-        if (instFrame)
+        const uint32_t slotCapacity = static_cast<uint32_t>(m_slotWorlds.size());
+        if (slotCapacity == 0)
+            return;
+
+        const uint32_t nodeCount = std::max<uint32_t>(m_slotNodeCount, 1u);
+        const uint32_t jointStride = std::max<uint32_t>(m_slotJointCount, 1u);
+
+        if (camFrame)
         {
-            if (!ensureInstanceCapacity(*instFrame, instanceCount))
+            if (!ensureInstanceWorldCapacity(*camFrame, slotCapacity))
+                return;
+            if (!ensureActiveSlotsCapacity(*camFrame, instanceCount))
+                return;
+            if (!ensurePaletteCapacity(*camFrame, slotCapacity * nodeCount))
+                return;
+            if (!ensureJointPaletteCapacity(*camFrame, slotCapacity * jointStride))
                 return;
 
-            if (instFrame->lastUploadedInstancesVersion != m_instancesVersion)
-            {
-                const glm::mat4 *src = m_instanceWorlds.empty() ? nullptr : m_instanceWorlds.data();
-                if (src)
-                {
-                    std::memcpy(instFrame->mapped, src, sizeof(glm::mat4) * instanceCount);
-                }
-                else
-                {
-                    const glm::mat4 I = identityMat4();
-                    std::memcpy(instFrame->mapped, &I, sizeof(glm::mat4));
-                }
+            camFrame->uploadedTransformEpoch.resize(slotCapacity, 0u);
+            camFrame->uploadedPoseEpoch.resize(slotCapacity, 0u);
 
-                instFrame->lastUploadedInstancesVersion = m_instancesVersion;
+            // Upload active slot indirection for this frame.
+            if (camFrame->activeSlotsMapped && camFrame->lastUploadedActiveSlotsVersion != m_activeSlotsVersion)
+            {
+                std::memcpy(camFrame->activeSlotsMapped, m_activeSlots.data(), sizeof(uint32_t) * instanceCount);
+                camFrame->lastUploadedActiveSlotsVersion = m_activeSlotsVersion;
             }
-        }
 
-        // Update node palette buffer for this frame (SSBO in set=0 binding=1).
-        const uint32_t nodeCount = model->nodes.empty() ? 1u : static_cast<uint32_t>(model->nodes.size());
-        const uint32_t neededMatrices = instanceCount * nodeCount;
-        if (camFrame && camFrame->paletteMapped && camFrame->lastUploadedNodePaletteVersion != m_nodePaletteVersion)
-        {
-            if (!ensurePaletteCapacity(*camFrame, neededMatrices))
-                return;
+            // Incremental per-slot uploads for active slots.
+            const auto *worldSrc = m_slotWorlds.data();
+            const auto *nodeSrc = m_nodePalette.data();
+            const auto *jointSrc = m_jointPalette.data();
 
-            const size_t expected = static_cast<size_t>(neededMatrices);
+            auto *worldDstBytes = static_cast<uint8_t *>(camFrame->instanceWorldMapped);
+            auto *nodeDstBytes = static_cast<uint8_t *>(camFrame->paletteMapped);
+            auto *jointDstBytes = static_cast<uint8_t *>(camFrame->jointPaletteMapped);
 
-            // Prefer the explicitly provided palette; otherwise fall back to the model's current node globals.
-            if (m_nodePalette.size() == expected)
+            for (uint32_t i = 0; i < instanceCount; ++i)
             {
-                std::memcpy(camFrame->paletteMapped, m_nodePalette.data(), sizeof(glm::mat4) * expected);
-            }
-            else
-            {
-                // Build a minimal fallback palette: replicate current per-node globals for each instance.
-                std::vector<glm::mat4> fallback;
-                fallback.resize(expected);
-                const uint32_t modelNodeCount = static_cast<uint32_t>(model->nodes.size());
-                for (uint32_t inst = 0; inst < instanceCount; ++inst)
+                const uint32_t slot = m_activeSlots[i];
+                if (slot >= slotCapacity)
+                    continue;
+
+                if (worldDstBytes && camFrame->uploadedTransformEpoch[slot] != m_slotTransformEpoch[slot])
                 {
-                    for (uint32_t ni = 0; ni < nodeCount; ++ni)
+                    std::memcpy(worldDstBytes + static_cast<size_t>(slot) * sizeof(glm::mat4),
+                                &worldSrc[slot],
+                                sizeof(glm::mat4));
+                    camFrame->uploadedTransformEpoch[slot] = m_slotTransformEpoch[slot];
+                }
+
+                if (camFrame->uploadedPoseEpoch[slot] != m_slotPoseEpoch[slot])
+                {
+                    if (nodeDstBytes)
                     {
-                        glm::mat4 g = glm::mat4(1.0f);
-                        if (ni < modelNodeCount)
-                            g = model->nodes[ni].globalMatrix;
-                        fallback[static_cast<size_t>(inst) * nodeCount + ni] = g;
+                        const size_t nodeBase = static_cast<size_t>(slot) * static_cast<size_t>(nodeCount);
+                        std::memcpy(nodeDstBytes + nodeBase * sizeof(glm::mat4),
+                                    nodeSrc + nodeBase,
+                                    sizeof(glm::mat4) * nodeCount);
                     }
+
+                    if (jointDstBytes)
+                    {
+                        const size_t jointBase = static_cast<size_t>(slot) * static_cast<size_t>(jointStride);
+                        std::memcpy(jointDstBytes + jointBase * sizeof(glm::mat4),
+                                    jointSrc + jointBase,
+                                    sizeof(glm::mat4) * jointStride);
+                    }
+
+                    camFrame->uploadedPoseEpoch[slot] = m_slotPoseEpoch[slot];
                 }
-                std::memcpy(camFrame->paletteMapped, fallback.data(), sizeof(glm::mat4) * expected);
             }
-
-            camFrame->lastUploadedNodePaletteVersion = m_nodePaletteVersion;
-        }
-
-        // Update joint palette buffer for this frame (SSBO in set=0 binding=2).
-        const uint32_t jointStride = (model->totalJointCount > 0) ? model->totalJointCount : 1u;
-        const uint32_t neededJointMatrices = instanceCount * jointStride;
-        if (camFrame && camFrame->jointPaletteMapped && camFrame->lastUploadedJointPaletteVersion != m_jointPaletteVersion)
-        {
-            if (!ensureJointPaletteCapacity(*camFrame, neededJointMatrices))
-                return;
-
-            const size_t expected = static_cast<size_t>(neededJointMatrices);
-            if (model->totalJointCount > 0 && m_jointPaletteJointCount == model->totalJointCount && m_jointPalette.size() == expected)
-            {
-                std::memcpy(camFrame->jointPaletteMapped, m_jointPalette.data(), sizeof(glm::mat4) * expected);
-            }
-            else
-            {
-                // Default to identity matrices. Shader will not use these unless skinJointCount > 0.
-                std::vector<glm::mat4> fallback;
-                fallback.assign(expected, glm::mat4(1.0f));
-                std::memcpy(camFrame->jointPaletteMapped, fallback.data(), sizeof(glm::mat4) * expected);
-            }
-
-            camFrame->lastUploadedJointPaletteVersion = m_jointPaletteVersion;
         }
 
         // Pass ordering like glTF: 0=OPAQUE,1=MASK,2=BLEND
@@ -1390,12 +1597,6 @@ namespace Engine
             if (camFrame && camFrame->set != VK_NULL_HANDLE)
             {
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &camFrame->set, 0, nullptr);
-            }
-
-            if (instFrame && instFrame->buffer != VK_NULL_HANDLE)
-            {
-                VkDeviceSize instOffset = 0;
-                vkCmdBindVertexBuffers(cmd, 1, 1, &instFrame->buffer, &instOffset);
             }
 
             if (!model->nodes.empty())
@@ -1434,7 +1635,7 @@ namespace Engine
                         pc.materialParams[2] = 0.0f;
                         pc.materialParams[3] = 0.0f;
                         pc.nodeIndex = nodeIndex;
-                        pc.nodeCount = static_cast<uint32_t>(model->nodes.size());
+                        pc.nodeCount = nodeCount;
 
                         // Skinning per-primitive
                         pc.jointPaletteStride = jointStride;
@@ -1492,7 +1693,7 @@ namespace Engine
                     pc.materialParams[2] = 0.0f;
                     pc.materialParams[3] = 0.0f;
                     pc.nodeIndex = 0;
-                    pc.nodeCount = 1;
+                    pc.nodeCount = nodeCount;
 
                     pc.jointPaletteStride = jointStride;
                     if (prim.skinIndex >= 0 && static_cast<uint32_t>(prim.skinIndex) < model->skins.size())
@@ -1536,7 +1737,6 @@ namespace Engine
             return;
 
         destroyCameraResources();
-        destroyInstanceResources();
         destroyMaterialResources();
 
         m_pipelineOpaque.destroy(m_device);

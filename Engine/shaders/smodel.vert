@@ -15,12 +15,6 @@ layout(location = 3) in vec4 inTangent;
 layout(location = 8) in uvec4 inJoints;
 layout(location = 9) in vec4 inWeights;
 
-// Per-instance world matrix (mat4 consumes 4 locations)
-layout(location = 4) in vec4 inInstanceCol0;
-layout(location = 5) in vec4 inInstanceCol1;
-layout(location = 6) in vec4 inInstanceCol2;
-layout(location = 7) in vec4 inInstanceCol3;
-
 layout(set = 0, binding = 0) uniform CameraUBO {
     mat4 view;
     mat4 proj;
@@ -38,6 +32,18 @@ layout(set = 0, binding = 2, std430) readonly buffer JointPalette
     mat4 jointMats[];
 } joints;
 
+// Slot-indexed instance world transforms: [slot]
+layout(set = 0, binding = 3, std430) readonly buffer InstanceWorlds
+{
+    mat4 instanceWorlds[];
+} inst;
+
+// Active slot indirection: gl_InstanceIndex -> slot
+layout(set = 0, binding = 4, std430) readonly buffer ActiveSlots
+{
+    uint slotIndex[];
+} activeSlots;
+
 layout(push_constant) uniform PushConstants
 {
     mat4 model;
@@ -52,8 +58,9 @@ layout(location = 1) out vec2 vUV0;
 
 void main()
 {
-    mat4 instanceWorld = mat4(inInstanceCol0, inInstanceCol1, inInstanceCol2, inInstanceCol3);
     uint instanceIndex = uint(gl_InstanceIndex);
+    uint slot = activeSlots.slotIndex[instanceIndex];
+    mat4 instanceWorld = inst.instanceWorlds[slot];
     uint nodeIndex = pc.nodeInfo.x;
     uint nodeCount = max(pc.nodeInfo.y, 1u);
 
@@ -75,7 +82,7 @@ void main()
         // Clamp joint indices to skinJointCount to avoid OOB.
         uvec4 j = min(inJoints, uvec4(max(skinJointCount - 1u, 0u)));
 
-        uint base = instanceIndex * jointStride + skinBase;
+        uint base = slot * jointStride + skinBase;
         skinM += w.x * joints.jointMats[base + j.x];
         skinM += w.y * joints.jointMats[base + j.y];
         skinM += w.z * joints.jointMats[base + j.z];
@@ -89,7 +96,7 @@ void main()
     else
     {
         // Unskinned: use node transform palette.
-        mat4 nodeM = palette.nodeGlobals[instanceIndex * nodeCount + nodeIndex];
+        mat4 nodeM = palette.nodeGlobals[slot * nodeCount + nodeIndex];
         M = instanceWorld * pc.model * nodeM;
         modelPos = vec4(inPosition, 1.0);
         modelNormal = inNormal;
