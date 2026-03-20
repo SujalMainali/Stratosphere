@@ -15,7 +15,7 @@
         "AttackCooldown",
         "LocomotionClips",
         "CombatClips",
-                "RenderBounds",
+        "RenderBounds",
         "VisibilityState",
         "RenderScale"
     ],

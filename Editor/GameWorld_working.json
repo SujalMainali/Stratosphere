@@ -34,7 +34,7 @@
             },
             "gaps": [],
             "prefab": "bushes",
-            "spacing": 30.0,
+            "spacing": 10.0,
             "start": {
                 "x": 500.0,
                 "z": 500.0
@@ -47,7 +47,7 @@
             },
             "gaps": [],
             "prefab": "bushes",
-            "spacing": 30.0,
+            "spacing": 10.0,
             "start": {
                 "x": -500.0,
                 "z": 500.0
@@ -60,7 +60,7 @@
             },
             "gaps": [],
             "prefab": "bushes",
-            "spacing": 30.0,
+            "spacing": 10.0,
             "start": {
                 "x": -500.0,
                 "z": -500.0
@@ -73,7 +73,7 @@
             },
             "gaps": [],
             "prefab": "bushes",
-            "spacing": 30.0,
+            "spacing": 10.0,
             "start": {
                 "x": 500.0,
                 "z": -500.0
@@ -190,7 +190,7 @@
             },
             "gaps": [],
             "prefab": "bushes",
-            "spacing": 30.0,
+            "spacing": 60.0,
             "start": {
                 "x": -388.0,
                 "z": -411.0
@@ -203,7 +203,7 @@
             },
             "gaps": [],
             "prefab": "bushes",
-            "spacing": 30.0,
+            "spacing": 10.0,
             "start": {
                 "x": -407.0,
                 "z": -389.0
@@ -216,7 +216,7 @@
             },
             "gaps": [],
             "prefab": "bushes",
-            "spacing": 30.0,
+            "spacing": 10.0,
             "start": {
                 "x": -427.0,
                 "z": -366.0
@@ -229,7 +229,7 @@
             },
             "gaps": [],
             "prefab": "bushes",
-            "spacing": 30.0,
+            "spacing": 10.0,
             "start": {
                 "x": -407.0,
                 "z": -389.0

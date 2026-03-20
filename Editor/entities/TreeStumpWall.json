@@ -1,4 +1,5 @@
 {
+    "name": "TreeStumpWall",
     "components": [
         "Position",
         "Obstacle",
@@ -7,22 +8,24 @@
         "Facing",
         "RenderModel",
         "RenderAnimation",
-        "RenderBounds",
+                "RenderBounds",
+        "VisibilityState",
+        "RenderScale",
+         "RenderBounds",
         "VisibilityState",
         "RenderScale"
     ],
     "defaults": {
-        "Facing": {
-            "yaw": 0.0
-        },
-        "Obstacle": {},
-        "ObstacleRadius": {
-            "r": 1.5
-        },
         "Position": {
             "x": 0.0,
             "y": 0.0,
             "z": 0.0
+        },
+        "ObstacleRadius": {
+            "r": 1.5
+        },
+        "Facing": {
+            "yaw": 0.0
         },
         "RenderAnimation": {
             "clipIndex": 0,
@@ -30,10 +33,9 @@
         },
         "RenderScale": {
             "uniform": 1.0
-        }
+         }
     },
-    "name": "TreeStumpWall",
     "visual": {
-        "model": "assets/fence/cerca.smodel"
+        "model": "assets/tree_stump/tree_stump.smodel"
     }
 }

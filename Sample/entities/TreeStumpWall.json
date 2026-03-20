@@ -10,6 +10,9 @@
         "RenderAnimation",
                 "RenderBounds",
         "VisibilityState",
+        "RenderScale",
+         "RenderBounds",
+        "VisibilityState",
         "RenderScale"
     ],
     "defaults": {
@@ -33,6 +36,6 @@
          }
     },
     "visual": {
-        "model": "assets/fence/cerca.smodel"
+        "model": "assets/tree_stump/tree_stump.smodel"
     }
 }

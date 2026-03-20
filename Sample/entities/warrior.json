@@ -1,0 +1,73 @@
+{
+  "name": "warrior",
+  "components": [
+    "Position",
+    "Velocity",
+    "Health",
+    "MoveTarget",
+    "MoveSpeed",
+    "Radius",
+    "Separation",
+    "AvoidanceParams",
+    "Facing",
+    "Path",
+    "Team",
+    "AttackCooldown",
+    "LocomotionClips",
+    "CombatClips",
+    "RenderModel",
+    "RenderAnimation"
+  ],
+  "defaults": {
+    "Position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "Velocity": { "x": 0.0, "y": 0.0, "z": 0.0 },
+
+    "Health": { "value": 140.0 },
+
+    "MoveTarget": { "x": 0.0, "y": 0.0, "z": 0.0, "active": 0 },
+    "MoveSpeed": { "value": 5.0 },
+
+    "Radius": { "r": 1.5 },
+    "Separation": { "value": 1.0 },
+
+    "AvoidanceParams": {
+      "strength": 3.5,
+      "maxAccel": 30.0,
+      "blend": 0.6,
+      "predictionTime": 0.55,
+      "interactSlack": 0.35,
+      "falloffWeight": 0.35,
+      "predictiveWeight": 0.75,
+      "pressureBoost": 1.5,
+      "nearGoalRadius": 2.0,
+      "nearGoalBoost": 2.5,
+      "stoppedBoost": 2.0,
+      "maxStopSpeed": 0.9
+    },
+
+    "Facing": { "yaw": 0.0 },
+    "Path": {},
+    "Team": { "id": 0 },
+
+    "AttackCooldown": { "timer": 0.0, "interval": 1.5 },
+
+    "LocomotionClips": {
+      "idleClip": 0,
+      "walkClip": 0,
+      "runClip": 0
+    },
+    "CombatClips": {
+      "attackStart": 0,
+      "attackEnd": 0,
+      "damageStart": 0,
+      "damageEnd": 0,
+      "deathStart": 0,
+      "deathEnd": 0
+    },
+
+    "RenderAnimation": { "clipIndex": 0, "playing": true }
+  },
+  "visual": {
+    "model": "assets/warrior1/warrior1.smodel"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "tree1",
+  "components": [
+    "Position",
+    "Obstacle",
+    "ObstacleRadius",
+    "Facing",
+    "RenderModel",
+    "RenderAnimation"
+  ],
+  "defaults": {
+    "Position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "ObstacleRadius": { "r": 5.0 },
+    "Facing": { "yaw": 0.0 },
+    "RenderAnimation": { "clipIndex": 0, "playing": false }
+  },
+  "visual": {
+    "model": "assets/tree1/tree1.smodel"
+  }
+}

@@ -433,7 +433,7 @@ namespace Engine::ECS
                 if (!std::isfinite(s.uniform) || s.uniform <= 0.0f)
                     s.uniform = 1.0f;
                 uint32_t cid = registry.ensureId("RenderScale");
-                p.defaults.emplace(cid, s);
+                p.defaults[cid] = s;
             }
         }
 

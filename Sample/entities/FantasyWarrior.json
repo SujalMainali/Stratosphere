@@ -1,0 +1,86 @@
+{
+  "components": [
+    "Position",
+    "Velocity",
+    "Health",
+    "MoveTarget",
+    "MoveSpeed",
+    "Radius",
+    "Separation",
+    "AvoidanceParams",
+    "Facing",
+    "Path",
+    "Team",
+    "AttackCooldown",
+    "CombatClips",
+    "LocomotionClips"
+  ],
+  "defaults": {
+    "AttackCooldown": {
+      "interval": 1.5,
+      "timer": 0.0
+    },
+    "AvoidanceParams": {
+      "blend": 0.6,
+      "falloffWeight": 0.35,
+      "interactSlack": 0.35,
+      "maxAccel": 30.0,
+      "maxStopSpeed": 0.9,
+      "nearGoalBoost": 2.5,
+      "nearGoalRadius": 2.0,
+      "predictionTime": 0.55,
+      "predictiveWeight": 0.75,
+      "pressureBoost": 1.5,
+      "stoppedBoost": 2.0,
+      "strength": 3.5
+    },
+    "CombatClips": {
+      "attackEnd": 43,
+      "attackStart": 36,
+      "damageEnd": 56,
+      "damageStart": 52,
+      "deathEnd": 64,
+      "deathStart": 61
+    },
+    "Facing": {
+      "yaw": 0.0
+    },
+    "Health": {
+      "value": 140.0
+    },
+    "LocomotionClips": {},
+    "MoveSpeed": {
+      "value": 5.0
+    },
+    "MoveTarget": {
+      "active": 0,
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
+    },
+    "Path": {},
+    "Position": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
+    },
+    "Radius": {
+      "r": 1.5
+    },
+    "Separation": {
+      "value": 1.0
+    },
+    "Team": {
+      "id": 0
+    },
+    "Velocity": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
+    }
+  },
+  "name": "FantasyWarrior",
+  "visual": {
+    "model": "assets/animated_warrior/scene.smodel"
+  }
+}

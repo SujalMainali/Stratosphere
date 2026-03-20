@@ -1,0 +1,41 @@
+{
+    "components": [
+        "Position",
+        "Velocity",
+        "Health",
+        "MoveTarget",
+        "MoveSpeed",
+        "Radius",
+        "Separation",
+        "AvoidanceParams",
+        "Facing",
+        "Path",
+        "Team",
+        "AttackCooldown",
+        "LocomotionClips",
+        "CombatClips",
+         "RenderBounds",
+        "VisibilityState",
+        "RenderScale"
+    ],
+    "defaults": {
+        "AttackCooldown": {},
+        "AvoidanceParams": {},
+        "CombatClips": {},
+        "Facing": {},
+        "Health": {},
+        "LocomotionClips": {},
+        "MoveSpeed": {},
+        "MoveTarget": {},
+        "Path": {},
+        "Position": {},
+        "Radius": {},
+        "Separation": {},
+        "Team": {},
+        "Velocity": {}
+    },
+    "name": "boss",
+    "visual": {
+        "model": "assets/demon0/Warrok W Kurniawan.smodel"
+    }
+}

@@ -16,7 +16,8 @@
         "LocomotionClips",
         "CombatClips",
         "RenderBounds",
-        "VisibilityState"
+        "VisibilityState",
+        "RenderScale"
     ],
     "defaults": {
         "Position": {
@@ -84,7 +85,10 @@
             "damageEnd": 56,
             "deathStart": 61,
             "deathEnd": 64
-        }
+        },
+         "RenderScale": {
+            "uniform": 1.0
+         }
     },
     "visual": {
         "model": "assets/Knight/Knight.smodel"
