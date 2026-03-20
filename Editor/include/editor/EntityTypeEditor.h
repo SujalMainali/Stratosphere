@@ -21,6 +21,13 @@ namespace Editor
     class EntityTypeEditor
     {
     public:
+        enum class EntityKind
+        {
+            Combatant = 0,
+            Obstacle = 1,
+            None = 2,
+        };
+
         struct Callbacks
         {
             // Called after save/delete when the world should be rebuilt.
@@ -50,6 +57,10 @@ namespace Editor
         void loadSelected();
 
         void newEntity();
+        void newEntity(EntityKind kind);
+        void applyEntityKindDefaults(EntityKind kind);
+        void applyEntityKindPreset(EntityKind kind);
+        EntityKind detectEntityKindFromDoc() const;
 
         void refreshSModelList();
 
@@ -82,6 +93,14 @@ namespace Editor
         char m_nameBuf[128] = {0};
         char m_modelBuf[256] = {0};
         char m_customCompBuf[64] = {0};
+
+        // Create menu state
+        int m_createKindIndex = 0;
+        char m_createNameBuf[128] = {0};
+        bool m_openCreatePopup = false;
+
+        // Details panel state
+        int m_entityKindIndex = 0;
 
         std::string m_loadedFromPath;
         bool m_loadedFromEditor = false;
