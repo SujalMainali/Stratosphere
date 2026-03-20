@@ -180,7 +180,11 @@ public:
             if (ecs.jobSystem && dirtyRows.size() >= PARALLEL_DIRTY_ROW_THRESHOLD)
             {
                 ecs.jobSystem->parallelFor(static_cast<uint32_t>(dirtyRows.size()), [&](uint32_t worker, uint32_t item)
-                                           { processRow(worker, dirtyRows[item]); });
+                                           {
+                                               if (item >= dirtyRows.size())
+                                                   return;
+                                               processRow(worker, dirtyRows[item]);
+                                           });
             }
             else
             {

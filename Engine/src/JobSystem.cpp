@@ -30,7 +30,7 @@ namespace Engine
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_running.store(false, std::memory_order_release);
-            m_hasWork = true; // wake all
+            ++m_jobId; // wake all
         }
         m_cvStart.notify_all();
 
@@ -47,6 +47,9 @@ namespace Engine
         if (itemCount == 0)
             return;
 
+        // This job system supports one in-flight parallelFor at a time.
+        std::lock_guard<std::mutex> submitLock(m_submitMutex);
+
         // No workers: run on calling thread.
         if (m_workerCount == 0 || !m_running.load(std::memory_order_acquire))
         {
@@ -61,7 +64,7 @@ namespace Engine
             m_itemCount = itemCount;
             m_nextIndex.store(0, std::memory_order_release);
             m_activeWorkers = m_workerCount;
-            m_hasWork = true;
+            ++m_jobId;
         }
 
         // Wake workers.
@@ -80,24 +83,26 @@ namespace Engine
         std::unique_lock<std::mutex> lock(m_mutex);
         m_cvDone.wait(lock, [this]()
                       { return m_activeWorkers == 0; });
-        m_hasWork = false;
         m_jobFn = nullptr;
         m_itemCount = 0;
     }
 
     void JobSystem::workerMain(uint32_t workerIndex)
     {
+        uint64_t seenJobId = 0;
         while (true)
         {
             JobFn fn;
             uint32_t count = 0;
             {
                 std::unique_lock<std::mutex> lock(m_mutex);
-                m_cvStart.wait(lock, [this]()
-                               { return m_hasWork; });
+                m_cvStart.wait(lock, [this, &seenJobId]()
+                               { return !m_running.load(std::memory_order_acquire) || m_jobId != seenJobId; });
 
                 if (!m_running.load(std::memory_order_acquire))
                     break;
+
+                seenJobId = m_jobId;
 
                 fn = m_jobFn;
                 count = m_itemCount;

@@ -43,11 +43,14 @@ namespace Engine
 
         std::atomic<bool> m_running{false};
 
+        // Serialize submissions; this job system runs one parallelFor at a time.
+        std::mutex m_submitMutex;
+
         // Current job group
         std::mutex m_mutex;
         std::condition_variable m_cvStart;
         std::condition_variable m_cvDone;
-        bool m_hasWork = false;
+        uint64_t m_jobId = 0;
         uint32_t m_activeWorkers = 0;
 
         std::atomic<uint32_t> m_nextIndex{0};
