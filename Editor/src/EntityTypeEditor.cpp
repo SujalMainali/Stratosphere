@@ -32,15 +32,34 @@ namespace
         "AttackCooldown",
         "LocomotionClips",
         "CombatClips",
-        "RenderMesh",
     };
 
     static const char *kObstacleComponents[] = {
         "Position",
         "Obstacle",
         "ObstacleRadius",
-        "RenderMesh",
     };
+
+    static bool isEditorVisibleComponentName(const std::string &name)
+    {
+        // Hide runtime/internal components that are engine-maintained caches or editor-only tags.
+        // The editor exposes visuals via the "Visual Model Path" field, so RenderModel/RenderAnimation
+        // are also intentionally hidden here.
+        static const std::vector<std::string> kHidden = {
+            "Selected",
+            "RenderModel",
+            "RenderAnimation",
+            "PosePalette",
+            "RenderTransform",
+            "RenderBounds",
+            "VisibilityState",
+        };
+
+        if (name.empty())
+            return false;
+
+        return std::find(kHidden.begin(), kHidden.end(), name) == kHidden.end();
+    }
 
     static const char *entityKindLabel(EntityKind kind)
     {
@@ -177,6 +196,23 @@ namespace
             return std::string();
         return std::filesystem::path(p).filename().string();
     }
+
+    static int InputTextCallback_Resize(ImGuiInputTextCallbackData *data)
+    {
+        if (data->EventFlag == ImGuiInputTextFlags_CallbackResize)
+        {
+            auto *str = static_cast<std::string *>(data->UserData);
+            str->resize(static_cast<size_t>(data->BufTextLen));
+            data->Buf = str->data();
+        }
+        return 0;
+    }
+
+    static bool InputTextMultilineStdString(const char *label, std::string *str, const ImVec2 &size, ImGuiInputTextFlags flags = 0)
+    {
+        flags |= ImGuiInputTextFlags_CallbackResize;
+        return ImGui::InputTextMultiline(label, str->data(), str->capacity() + 1, size, flags, InputTextCallback_Resize, str);
+    }
 }
 
 namespace Editor
@@ -275,6 +311,9 @@ namespace Editor
         m_loadedFromEditor = e.isEditorOwned;
         m_entityKindIndex = static_cast<int>(detectEntityKindFromDoc());
 
+        m_defaultsJsonBuf.clear();
+        m_defaultsJsonErr.clear();
+
         m_statusMsg = "Loaded " + e.name;
         m_statusTimer = 2.0f;
     }
@@ -319,14 +358,9 @@ namespace Editor
 
         for (const char *c : kCombatantComponents)
         {
-            if (std::string(c) == "RenderMesh")
-                continue;
             if (hasComponent(c))
                 return EntityKind::Combatant;
         }
-
-        if (hasComponent("RenderMesh"))
-            return EntityKind::Combatant;
 
         return EntityKind::None;
     }
@@ -351,6 +385,9 @@ namespace Editor
         m_loadedFromPath.clear();
         m_loadedFromEditor = false;
         m_entityKindIndex = static_cast<int>(kind);
+
+        m_defaultsJsonBuf.clear();
+        m_defaultsJsonErr.clear();
     }
 
     void EntityTypeEditor::refreshSModelList()
@@ -583,7 +620,7 @@ namespace Editor
         ImGui::EndChild();
     }
 
-    void EntityTypeEditor::drawEntityDetails(Engine::ECS::ECSContext & /*ecs*/, Engine::AssetManager & /*assets*/)
+    void EntityTypeEditor::drawEntityDetails(Engine::ECS::ECSContext &ecs, Engine::AssetManager & /*assets*/)
     {
         // Name + model
         ImGui::InputText("Name", m_nameBuf, sizeof(m_nameBuf));
@@ -608,15 +645,14 @@ namespace Editor
             refreshSModelList();
 
         const std::string currentModelPath = trim(std::string(m_modelBuf));
-        const std::string currentModelFile = fileNameFromPath(currentModelPath);
-        const char *preview = currentModelFile.empty() ? "(none)" : currentModelFile.c_str();
+        const char *preview = currentModelPath.empty() ? "(none)" : currentModelPath.c_str();
 
         if (ImGui::BeginCombo("Pick .smodel", preview))
         {
             for (const auto &m : m_smodels)
             {
                 const bool selected = (!currentModelPath.empty() && m.runtimePath == currentModelPath);
-                if (ImGui::Selectable(m.fileName.c_str(), selected))
+                if (ImGui::Selectable(m.runtimePath.c_str(), selected))
                     std::snprintf(m_modelBuf, sizeof(m_modelBuf), "%s", m.runtimePath.c_str());
                 if (selected)
                     ImGui::SetItemDefaultFocus();
@@ -634,45 +670,67 @@ namespace Editor
         // Components + defaults
         auto &defs = defaultsObj();
 
-        struct CompRow
-        {
-            const char *name;
-            bool hasDefaults;
-        };
-
-        static const CompRow kKnown[] = {
-            {"Position", true},
-            {"Velocity", true},
-            {"Health", true},
-            {"MoveTarget", true},
-            {"MoveSpeed", true},
-            {"Radius", true},
-            {"Separation", true},
-            {"AvoidanceParams", true},
-            {"Facing", true},
-            {"Path", true},
-            {"Team", true},
-            {"AttackCooldown", true},
-            {"LocomotionClips", true},
-            {"CombatClips", true},
-            {"Obstacle", true},
-            {"ObstacleRadius", true},
-            {"RenderMesh", false},
-        };
-
         if (ImGui::CollapsingHeader("Components", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            for (const auto &c : kKnown)
+            // Ensure any components already present in the JSON are registered so they can appear.
+            if (m_doc.contains("components") && m_doc["components"].is_array())
             {
-                bool enabled = hasComponent(c.name);
-                if (ImGui::Checkbox(c.name, &enabled))
+                for (const auto &v : m_doc["components"])
                 {
-                    ensureComponent(c.name, enabled);
-                    if (enabled && c.hasDefaults)
+                    if (v.is_string())
+                        (void)ecs.components.ensureId(v.get<std::string>());
+                }
+            }
+
+            std::vector<std::string> all;
+            all.reserve(static_cast<size_t>(ecs.components.count()) + 16);
+
+            for (uint32_t cid = 0; cid < ecs.components.count(); ++cid)
+            {
+                const std::string &nm = ecs.components.getName(cid);
+                if (!nm.empty())
+                    all.push_back(nm);
+            }
+
+            // Also include any components referenced by defaults even if not in the registry yet.
+            if (m_doc.contains("defaults") && m_doc["defaults"].is_object())
+            {
+                for (auto it = m_doc["defaults"].begin(); it != m_doc["defaults"].end(); ++it)
+                {
+                    if (!it.key().empty())
+                        all.push_back(it.key());
+                }
+            }
+
+            std::sort(all.begin(), all.end());
+            all.erase(std::unique(all.begin(), all.end()), all.end());
+
+            // Show enabled components first, then alphabetical.
+            std::stable_sort(all.begin(), all.end(), [&](const std::string &a, const std::string &b)
+                             {
+                                 const bool ea = hasComponent(a);
+                                 const bool eb = hasComponent(b);
+                                 if (ea != eb)
+                                     return ea > eb;
+                                 return a < b;
+                             });
+
+            for (const auto &name : all)
+            {
+                if (!isEditorVisibleComponentName(name))
+                    continue;
+
+                bool enabled = hasComponent(name);
+                if (ImGui::Checkbox(name.c_str(), &enabled))
+                {
+                    ensureComponent(name, enabled);
+                    if (enabled)
                     {
+                        // For components that support defaults, having an empty object is harmless and
+                        // makes it easy for users to fill fields later.
                         ensureDefaultsObject(m_doc);
-                        if (!defs.contains(c.name))
-                            defs[c.name] = nlohmann::json::object();
+                        if (!defs.contains(name))
+                            defs[name] = nlohmann::json::object();
                     }
                 }
             }
@@ -686,6 +744,7 @@ namespace Editor
                 if (!cc.empty())
                 {
                     ensureComponent(cc, true);
+                    (void)ecs.components.ensureId(cc);
                     m_customCompBuf[0] = '\0';
                 }
             }
@@ -693,96 +752,130 @@ namespace Editor
 
         if (ImGui::CollapsingHeader("Defaults", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            auto drawVec3 = [&](const char *comp, const char *xk, const char *yk, const char *zk, float def)
+            // Build the set of enabled components from the JSON doc.
+            std::vector<std::string> enabled;
+            if (m_doc.contains("components") && m_doc["components"].is_array())
             {
-                if (!hasComponent(comp))
-                    return;
+                for (const auto &v : m_doc["components"])
+                {
+                    if (!v.is_string())
+                        continue;
+                    std::string nm = v.get<std::string>();
+                    if (!isEditorVisibleComponentName(nm))
+                        continue;
+                    enabled.push_back(std::move(nm));
+                }
+            }
+
+            std::sort(enabled.begin(), enabled.end());
+            enabled.erase(std::unique(enabled.begin(), enabled.end()), enabled.end());
+
+            for (const auto &comp : enabled)
+            {
                 ensureDefaultsObject(m_doc);
                 auto &o = defs[comp];
                 if (!o.is_object())
                     o = nlohmann::json::object();
 
-                float x = getFloatOr(o, xk, def);
-                float y = getFloatOr(o, yk, def);
-                float z = getFloatOr(o, zk, def);
+                if (!ImGui::TreeNode(comp.c_str()))
+                    continue;
 
-                if (ImGui::TreeNode(comp))
+                bool handled = false;
+
+                auto drawVec3Inline = [&](const char *xk, const char *yk, const char *zk, float def)
                 {
+                    float x = getFloatOr(o, xk, def);
+                    float y = getFloatOr(o, yk, def);
+                    float z = getFloatOr(o, zk, def);
                     if (ImGui::DragFloat("x", &x, 0.1f))
                         o[xk] = x;
                     if (ImGui::DragFloat("y", &y, 0.1f))
                         o[yk] = y;
                     if (ImGui::DragFloat("z", &z, 0.1f))
                         o[zk] = z;
-                    ImGui::TreePop();
-                }
-            };
+                };
 
-            auto drawFloat = [&](const char *comp, const char *k, float def, float speed = 0.1f)
-            {
-                if (!hasComponent(comp))
-                    return;
-                ensureDefaultsObject(m_doc);
-                auto &o = defs[comp];
-                if (!o.is_object())
-                    o = nlohmann::json::object();
-
-                float v = getFloatOr(o, k, def);
-                if (ImGui::TreeNode(comp))
+                if (comp == "Position" || comp == "Velocity")
                 {
-                    if (ImGui::DragFloat(k, &v, speed))
-                        o[k] = v;
-                    ImGui::TreePop();
+                    drawVec3Inline("x", "y", "z", 0.0f);
+                    handled = true;
                 }
-            };
-
-            // Position/Velocity
-            drawVec3("Position", "x", "y", "z", 0.0f);
-            drawVec3("Velocity", "x", "y", "z", 0.0f);
-
-            // Health
-            if (hasComponent("Health"))
-            {
-                auto &o = defs["Health"];
-                float hp = getFloatOr(o, "value", 100.0f);
-                if (ImGui::TreeNode("Health"))
+                else if (comp == "Health")
                 {
+                    float hp = getFloatOr(o, "value", 100.0f);
                     if (ImGui::DragFloat("value", &hp, 1.0f, 1.0f, 10000.0f))
                         o["value"] = hp;
-                    ImGui::TreePop();
+                    handled = true;
                 }
-            }
-
-            // MoveSpeed
-            drawFloat("MoveSpeed", "value", 5.0f, 0.1f);
-
-            // Radius
-            if (hasComponent("Radius"))
-            {
-                auto &o = defs["Radius"];
-                float r = getFloatOr(o, "r", 0.5f);
-                if (ImGui::TreeNode("Radius"))
+                else if (comp == "MoveSpeed")
                 {
+                    float v = getFloatOr(o, "value", 5.0f);
+                    if (ImGui::DragFloat("value", &v, 0.1f))
+                        o["value"] = v;
+                    handled = true;
+                }
+                else if (comp == "Radius" || comp == "ObstacleRadius")
+                {
+                    float r = getFloatOr(o, "r", 0.5f);
                     if (ImGui::DragFloat("r", &r, 0.05f, 0.0f, 50.0f))
                         o["r"] = r;
-                    ImGui::TreePop();
+                    handled = true;
                 }
-            }
-
-            // Separation
-            drawFloat("Separation", "value", 0.5f, 0.05f);
-
-            // Facing
-            if (hasComponent("Facing"))
-            {
-                auto &o = defs["Facing"];
-                float yaw = getFloatOr(o, "yaw", 0.0f);
-                if (ImGui::TreeNode("Facing"))
+                else if (comp == "Separation")
                 {
+                    float v = getFloatOr(o, "value", 0.5f);
+                    if (ImGui::DragFloat("value", &v, 0.05f))
+                        o["value"] = v;
+                    handled = true;
+                }
+                else if (comp == "Facing")
+                {
+                    float yaw = getFloatOr(o, "yaw", 0.0f);
                     if (ImGui::DragFloat("yaw", &yaw, 0.01f))
                         o["yaw"] = yaw;
-                    ImGui::TreePop();
+                    handled = true;
                 }
+
+                if (!handled)
+                {
+                    // Raw JSON fallback so defaults are editable for any component.
+                    auto &buf = m_defaultsJsonBuf[comp];
+                    if (buf.empty())
+                        buf = o.dump(4);
+
+                    ImGui::PushID(comp.c_str());
+                    ImGui::TextDisabled("Defaults JSON (object)");
+                    InputTextMultilineStdString("##DefaultsJson", &buf, ImVec2(-1.0f, 140.0f));
+
+                    if (ImGui::Button("Apply##DefaultsJson"))
+                    {
+                        try
+                        {
+                            nlohmann::json parsed = nlohmann::json::parse(buf);
+                            if (!parsed.is_object())
+                            {
+                                m_defaultsJsonErr[comp] = "Defaults must be a JSON object.";
+                            }
+                            else
+                            {
+                                o = std::move(parsed);
+                                m_defaultsJsonErr.erase(comp);
+                            }
+                        }
+                        catch (const std::exception &ex)
+                        {
+                            m_defaultsJsonErr[comp] = ex.what();
+                        }
+                    }
+
+                    auto itErr = m_defaultsJsonErr.find(comp);
+                    if (itErr != m_defaultsJsonErr.end() && !itErr->second.empty())
+                        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", itErr->second.c_str());
+
+                    ImGui::PopID();
+                }
+
+                ImGui::TreePop();
             }
 
             // Team

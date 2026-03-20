@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace Engine::ECS
@@ -88,6 +89,10 @@ namespace Editor
 
         // Working JSON document
         nlohmann::json m_doc;
+
+        // Raw JSON editor buffers for Defaults panel (per component name)
+        std::unordered_map<std::string, std::string> m_defaultsJsonBuf;
+        std::unordered_map<std::string, std::string> m_defaultsJsonErr;
 
         // UI state
         char m_nameBuf[128] = {0};
