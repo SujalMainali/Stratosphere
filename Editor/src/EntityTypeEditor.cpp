@@ -15,6 +15,47 @@
 
 namespace
 {
+    using EntityKind = Editor::EntityTypeEditor::EntityKind;
+
+    static const char *kCombatantComponents[] = {
+        "Position",
+        "Velocity",
+        "Health",
+        "MoveTarget",
+        "MoveSpeed",
+        "Radius",
+        "Separation",
+        "AvoidanceParams",
+        "Facing",
+        "Path",
+        "Team",
+        "AttackCooldown",
+        "LocomotionClips",
+        "CombatClips",
+        "RenderMesh",
+    };
+
+    static const char *kObstacleComponents[] = {
+        "Position",
+        "Obstacle",
+        "ObstacleRadius",
+        "RenderMesh",
+    };
+
+    static const char *entityKindLabel(EntityKind kind)
+    {
+        switch (kind)
+        {
+        case EntityKind::None:
+            return "None";
+        case EntityKind::Obstacle:
+            return "Obstacle";
+        case EntityKind::Combatant:
+        default:
+            return "Combatant";
+        }
+    }
+
     static bool endsWith(const std::string &s, const std::string &suffix)
     {
         if (suffix.size() > s.size())
@@ -232,6 +273,7 @@ namespace Editor
 
         m_loadedFromPath = e.path.string();
         m_loadedFromEditor = e.isEditorOwned;
+        m_entityKindIndex = static_cast<int>(detectEntityKindFromDoc());
 
         m_statusMsg = "Loaded " + e.name;
         m_statusTimer = 2.0f;
@@ -239,17 +281,76 @@ namespace Editor
 
     void EntityTypeEditor::newEntity()
     {
+        newEntity(EntityKind::Combatant);
+    }
+
+    void EntityTypeEditor::applyEntityKindDefaults(EntityKind kind)
+    {
+        if (kind == EntityKind::None)
+            return;
+
+        if (kind == EntityKind::Obstacle)
+        {
+            for (const char *c : kObstacleComponents)
+                ensureComponent(c, true);
+            return;
+        }
+
+        // Combatant defaults should be pre-selected on create, but still editable in Components UI.
+        for (const char *c : kCombatantComponents)
+            ensureComponent(c, true);
+    }
+
+    void EntityTypeEditor::applyEntityKindPreset(EntityKind kind)
+    {
+        // Re-apply only known preset components; custom components remain untouched.
+        for (const char *c : kCombatantComponents)
+            ensureComponent(c, false);
+        for (const char *c : kObstacleComponents)
+            ensureComponent(c, false);
+
+        applyEntityKindDefaults(kind);
+    }
+
+    EntityKind EntityTypeEditor::detectEntityKindFromDoc() const
+    {
+        if (hasComponent("Obstacle") || hasComponent("ObstacleRadius"))
+            return EntityKind::Obstacle;
+
+        for (const char *c : kCombatantComponents)
+        {
+            if (std::string(c) == "RenderMesh")
+                continue;
+            if (hasComponent(c))
+                return EntityKind::Combatant;
+        }
+
+        if (hasComponent("RenderMesh"))
+            return EntityKind::Combatant;
+
+        return EntityKind::None;
+    }
+
+    void EntityTypeEditor::newEntity(EntityKind kind)
+    {
         m_doc = nlohmann::json::object();
-        m_doc["name"] = "NewEntity";
+        const char *defaultName = "NewCombatant";
+        if (kind == EntityKind::Obstacle)
+            defaultName = "NewObstacle";
+        else if (kind == EntityKind::None)
+            defaultName = "NewEntity";
+        m_doc["name"] = defaultName;
         m_doc["components"] = nlohmann::json::array();
         m_doc["defaults"] = nlohmann::json::object();
+        applyEntityKindDefaults(kind);
 
-        std::snprintf(m_nameBuf, sizeof(m_nameBuf), "%s", "NewEntity");
+        std::snprintf(m_nameBuf, sizeof(m_nameBuf), "%s", defaultName);
         m_modelBuf[0] = '\0';
         m_customCompBuf[0] = '\0';
 
         m_loadedFromPath.clear();
         m_loadedFromEditor = false;
+        m_entityKindIndex = static_cast<int>(kind);
     }
 
     void EntityTypeEditor::refreshSModelList()
@@ -401,7 +502,63 @@ namespace Editor
 
         ImGui::SameLine();
         if (ImGui::Button("New"))
-            newEntity();
+        {
+            std::snprintf(m_createNameBuf, sizeof(m_createNameBuf), "%s", "NewCombatant");
+            m_createKindIndex = static_cast<int>(EntityKind::Combatant);
+            m_openCreatePopup = true;
+        }
+
+        if (m_openCreatePopup)
+        {
+            ImGui::OpenPopup("Create Entity Type");
+            m_openCreatePopup = false;
+        }
+
+        if (ImGui::BeginPopupModal("Create Entity Type", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            static const char *kKinds[] = {"Combatant", "Obstacle", "None"};
+            const int prevKind = m_createKindIndex;
+
+            ImGui::InputText("Name", m_createNameBuf, sizeof(m_createNameBuf));
+            ImGui::Combo("Entity Type", &m_createKindIndex, kKinds, IM_ARRAYSIZE(kKinds));
+
+            if (m_createKindIndex != prevKind)
+            {
+                const char *suggested = "NewCombatant";
+                if (m_createKindIndex == static_cast<int>(EntityKind::Obstacle))
+                    suggested = "NewObstacle";
+                else if (m_createKindIndex == static_cast<int>(EntityKind::None))
+                    suggested = "NewEntity";
+                std::snprintf(m_createNameBuf, sizeof(m_createNameBuf), "%s", suggested);
+            }
+
+            ImGui::Separator();
+            if (ImGui::Button("Create"))
+            {
+                const EntityKind kind = (m_createKindIndex == static_cast<int>(EntityKind::Obstacle))
+                                            ? EntityKind::Obstacle
+                                            : ((m_createKindIndex == static_cast<int>(EntityKind::None)) ? EntityKind::None : EntityKind::Combatant);
+
+                newEntity(kind);
+
+                const std::string requestedName = trim(std::string(m_createNameBuf));
+                if (!requestedName.empty())
+                {
+                    m_doc["name"] = requestedName;
+                    std::snprintf(m_nameBuf, sizeof(m_nameBuf), "%s", requestedName.c_str());
+                }
+
+                m_statusMsg = std::string("Created ") + entityKindLabel(kind) + " entity template";
+                m_statusTimer = 2.0f;
+                ImGui::CloseCurrentPopup();
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel"))
+                ImGui::CloseCurrentPopup();
+
+            ImGui::EndPopup();
+        }
 
         ImGui::Separator();
 
@@ -431,6 +588,17 @@ namespace Editor
         // Name + model
         ImGui::InputText("Name", m_nameBuf, sizeof(m_nameBuf));
         ImGui::InputText("Visual Model Path", m_modelBuf, sizeof(m_modelBuf));
+
+        static const char *kKinds[] = {"Combatant", "Obstacle", "None"};
+        const int prevKind = m_entityKindIndex;
+        ImGui::Combo("Entity Type", &m_entityKindIndex, kKinds, IM_ARRAYSIZE(kKinds));
+        if (m_entityKindIndex != prevKind)
+        {
+            const EntityKind kind = (m_entityKindIndex == static_cast<int>(EntityKind::Obstacle))
+                                        ? EntityKind::Obstacle
+                                        : ((m_entityKindIndex == static_cast<int>(EntityKind::None)) ? EntityKind::None : EntityKind::Combatant);
+            applyEntityKindPreset(kind);
+        }
 
         ImGui::SameLine();
         if (ImGui::Button("Rescan Models"))
