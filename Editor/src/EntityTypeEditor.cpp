@@ -474,7 +474,8 @@ namespace Editor
         std::string model = trim(std::string(m_modelBuf));
         if (!model.empty())
         {
-            m_doc["visual"] = nlohmann::json::object();
+            if (!m_doc.contains("visual") || !m_doc["visual"].is_object())
+                m_doc["visual"] = nlohmann::json::object();
             m_doc["visual"]["model"] = model;
         }
         else

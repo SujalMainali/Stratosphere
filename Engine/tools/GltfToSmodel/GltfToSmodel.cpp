@@ -12,6 +12,8 @@
 #include <cstring>
 #include <algorithm>
 #include <functional>
+#include <cctype>
+#include <regex>
 
 // Your engine format header (adjust include path if needed)
 #include "assets/ModelFormat.h"
@@ -465,6 +467,212 @@ static void WriteChars(std::ofstream &out, const std::vector<char> &c)
 {
     if (!c.empty())
         out.write(reinterpret_cast<const char *>(c.data()), c.size());
+}
+
+static std::string ToLowerASCII(std::string s)
+{
+    for (char &ch : s)
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    return s;
+}
+
+static const char *InferAnimTag(const std::string &clipName)
+{
+    const std::string n = ToLowerASCII(clipName);
+    auto has = [&](const char *needle)
+    {
+        return n.find(needle) != std::string::npos;
+    };
+
+    if (has("idle"))
+        return "idle";
+    if (has("walk"))
+        return "walk";
+    if (has("run"))
+        return "run";
+    if (has("jump"))
+        return "jump";
+    if (has("attack") || has("atk") || has("slash") || has("strike"))
+        return "attack";
+    if (has("hit") || has("hurt") || has("damage"))
+        return "hit";
+    if (has("death") || has("die"))
+        return "death";
+    if (has("cast") || has("spell"))
+        return "cast";
+    if (has("equip") || has("draw") || has("sheath"))
+        return "equip";
+    if (has("taunt") || has("emote"))
+        return "emote";
+
+    return "unknown";
+}
+
+static bool ReadTextFile(const std::string &path, std::string &out)
+{
+    std::ifstream f(path);
+    if (!f.is_open())
+        return false;
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    out = ss.str();
+    return true;
+}
+
+static std::string ReplaceExtension(const std::string &path, const std::string &newExt)
+{
+    std::filesystem::path p(path);
+    p.replace_extension(newExt);
+    return NormalizePathSlashes(p.string());
+}
+
+static uint32_t FindKeyInterval(const float *times, uint32_t count, float t)
+{
+    if (count <= 1)
+        return 0;
+    if (t <= times[0])
+        return 0;
+    if (t >= times[count - 2])
+        return count - 2;
+
+    uint32_t lo = 0, hi = count - 1;
+    while (hi - lo > 1)
+    {
+        uint32_t mid = (lo + hi) / 2;
+        if (times[mid] <= t)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
+static float ComputeAlpha(float t0, float t1, float t)
+{
+    const float dt = t1 - t0;
+    if (dt <= 1e-8f)
+        return 0.0f;
+    float a = (t - t0) / dt;
+    if (a < 0.0f)
+        a = 0.0f;
+    if (a > 1.0f)
+        a = 1.0f;
+    return a;
+}
+
+static void SampleVec3At(const float *times, const float *values, uint32_t keyCount, float t, float out[3])
+{
+    if (keyCount == 0)
+    {
+        out[0] = out[1] = out[2] = 0.0f;
+        return;
+    }
+    if (keyCount == 1)
+    {
+        out[0] = values[0];
+        out[1] = values[1];
+        out[2] = values[2];
+        return;
+    }
+
+    const uint32_t i = FindKeyInterval(times, keyCount, t);
+    const float t0 = times[i];
+    const float t1 = times[i + 1];
+    const float a = ComputeAlpha(t0, t1, t);
+
+    const float *v0 = values + i * 3;
+    const float *v1 = values + (i + 1) * 3;
+    out[0] = v0[0] + (v1[0] - v0[0]) * a;
+    out[1] = v0[1] + (v1[1] - v0[1]) * a;
+    out[2] = v0[2] + (v1[2] - v0[2]) * a;
+}
+
+static void NormalizeQuat(float q[4])
+{
+    const float len2 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+    if (len2 <= 1e-12f)
+    {
+        q[0] = q[1] = q[2] = 0.0f;
+        q[3] = 1.0f;
+        return;
+    }
+    const float inv = 1.0f / std::sqrt(len2);
+    q[0] *= inv;
+    q[1] *= inv;
+    q[2] *= inv;
+    q[3] *= inv;
+}
+
+static float DotQuat(const float a[4], const float b[4])
+{
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+}
+
+static void SlerpQuat(const float q0in[4], const float q1in[4], float a, float out[4])
+{
+    float q0[4] = {q0in[0], q0in[1], q0in[2], q0in[3]};
+    float q1[4] = {q1in[0], q1in[1], q1in[2], q1in[3]};
+    NormalizeQuat(q0);
+    NormalizeQuat(q1);
+
+    float dot = DotQuat(q0, q1);
+    if (dot < 0.0f)
+    {
+        dot = -dot;
+        q1[0] = -q1[0];
+        q1[1] = -q1[1];
+        q1[2] = -q1[2];
+        q1[3] = -q1[3];
+    }
+
+    // If very close, lerp to avoid precision issues.
+    if (dot > 0.9995f)
+    {
+        out[0] = q0[0] + (q1[0] - q0[0]) * a;
+        out[1] = q0[1] + (q1[1] - q0[1]) * a;
+        out[2] = q0[2] + (q1[2] - q0[2]) * a;
+        out[3] = q0[3] + (q1[3] - q0[3]) * a;
+        NormalizeQuat(out);
+        return;
+    }
+
+    const float theta = std::acos(std::max(-1.0f, std::min(1.0f, dot)));
+    const float s = std::sin(theta);
+    const float w0 = std::sin((1.0f - a) * theta) / s;
+    const float w1 = std::sin(a * theta) / s;
+
+    out[0] = q0[0] * w0 + q1[0] * w1;
+    out[1] = q0[1] * w0 + q1[1] * w1;
+    out[2] = q0[2] * w0 + q1[2] * w1;
+    out[3] = q0[3] * w0 + q1[3] * w1;
+    NormalizeQuat(out);
+}
+
+static void SampleQuatAt(const float *times, const float *values, uint32_t keyCount, float t, float out[4])
+{
+    if (keyCount == 0)
+    {
+        out[0] = out[1] = out[2] = 0.0f;
+        out[3] = 1.0f;
+        return;
+    }
+    if (keyCount == 1)
+    {
+        out[0] = values[0];
+        out[1] = values[1];
+        out[2] = values[2];
+        out[3] = values[3];
+        NormalizeQuat(out);
+        return;
+    }
+
+    const uint32_t i = FindKeyInterval(times, keyCount, t);
+    const float t0 = times[i];
+    const float t1 = times[i + 1];
+    const float a = ComputeAlpha(t0, t1, t);
+    const float *q0 = values + i * 4;
+    const float *q1 = values + (i + 1) * 4;
+    SlerpQuat(q0, q1, a, out);
 }
 
 // ------------------------------------------------------------
@@ -1222,6 +1430,230 @@ int main(int argc, char **argv)
                 // Rewind firstChannel to keep clip table consistent (no-op since clip not stored)
                 // Channels weren't added either, so nothing to fix.
             }
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Optional clip splitting via sidecar file
+    // ------------------------------------------------------------
+    // Many DCC exports (e.g. Blender without "All Actions") end up with one big animation ("Take 001").
+    // If you want multiple runtime clips (idle/run/attack...), create a sidecar next to the input:
+    //   scene.clips.json
+    // with contents like:
+    // {
+    //   "sourceAnim": 0,
+    //   "clips": [
+    //     {"name":"Idle", "startSec":0.0, "endSec":2.0},
+    //     {"name":"Run",  "startSec":2.0, "endSec":3.0}
+    //   ]
+    // }
+    {
+        const std::string sidecarA = ReplaceExtension(inputPath, ".clips.json");
+        const std::string sidecarB = inputPath + ".clips.json";
+
+        std::string sidecarText;
+        std::string sidecarPath;
+        if (ReadTextFile(sidecarA, sidecarText))
+            sidecarPath = sidecarA;
+        else if (ReadTextFile(sidecarB, sidecarText))
+            sidecarPath = sidecarB;
+
+        struct SplitDef
+        {
+            std::string name;
+            float startSec = 0.0f;
+            float endSec = 0.0f;
+        };
+
+        if (!sidecarPath.empty())
+        {
+            uint32_t sourceAnim = 0;
+            {
+                std::regex re_src(R"re("sourceAnim"\s*:\s*(\d+))re");
+                std::smatch m;
+                if (std::regex_search(sidecarText, m, re_src))
+                    sourceAnim = static_cast<uint32_t>(std::stoul(m[1].str()));
+            }
+
+            std::vector<SplitDef> splits;
+            {
+                // Extremely small, permissive parser: looks for {"name":"..","startSec":..,"endSec":..}
+                std::regex re_clip(R"re(\{[^\}]*?"name"\s*:\s*"([^"]+)"[^\}]*?"startSec"\s*:\s*([-+]?\d*\.?\d+)[^\}]*?"endSec"\s*:\s*([-+]?\d*\.?\d+)[^\}]*?\})re");
+                for (auto it = std::sregex_iterator(sidecarText.begin(), sidecarText.end(), re_clip); it != std::sregex_iterator(); ++it)
+                {
+                    SplitDef d;
+                    d.name = (*it)[1].str();
+                    d.startSec = std::stof((*it)[2].str());
+                    d.endSec = std::stof((*it)[3].str());
+                    if (d.endSec > d.startSec)
+                        splits.push_back(std::move(d));
+                }
+            }
+
+            if (!splits.empty() && sourceAnim < animClips.size())
+            {
+                std::cout << "Using clip split sidecar: " << sidecarPath << " (sourceAnim=" << sourceAnim << ", clips=" << splits.size() << ")\n";
+
+                const auto &srcClip = animClips[sourceAnim];
+                const uint32_t srcFirst = srcClip.firstChannel;
+                const uint32_t srcCount = srcClip.channelCount;
+
+                std::vector<sm::SModelAnimationClipRecord> newClips;
+                std::vector<sm::SModelAnimationChannelRecord> newChannels;
+                std::vector<sm::SModelAnimationSamplerRecord> newSamplers;
+                std::vector<float> newTimes;
+                std::vector<float> newValues;
+
+                newClips.reserve(splits.size());
+                newChannels.reserve(size_t(srcCount) * splits.size());
+                newSamplers.reserve(size_t(srcCount) * splits.size());
+
+                for (const SplitDef &sd : splits)
+                {
+                    sm::SModelAnimationClipRecord outClip{};
+                    outClip.nameOffset = strings.add(sd.name);
+                    outClip.durationSec = sd.endSec - sd.startSec;
+                    outClip.firstChannel = static_cast<uint32_t>(newChannels.size());
+                    outClip.channelCount = 0;
+
+                    for (uint32_t ci = 0; ci < srcCount; ++ci)
+                    {
+                        const uint32_t chIx = srcFirst + ci;
+                        if (chIx >= animChannels.size())
+                            break;
+                        const auto &srcCh = animChannels[chIx];
+                        if (srcCh.samplerIndex >= animSamplers.size())
+                            continue;
+                        const auto &srcS = animSamplers[srcCh.samplerIndex];
+
+                        if (srcS.timeCount == 0)
+                            continue;
+                        if (srcS.firstTime + srcS.timeCount > animTimes.size())
+                            continue;
+
+                        const uint32_t stride = (srcS.valueType == (uint8_t)sm::SModelAnimValueType::Vec3) ? 3u : 4u;
+                        if (srcS.firstValue + srcS.valueCount > animValues.size())
+                            continue;
+                        if (srcS.valueCount < stride)
+                            continue;
+
+                        const float *times = animTimes.data() + srcS.firstTime;
+                        const float *values = animValues.data() + srcS.firstValue;
+                        const uint32_t keyCount = srcS.timeCount;
+
+                        // Build clipped keys (always includes boundaries).
+                        std::vector<float> clipTimes;
+                        std::vector<float> clipValues;
+                        clipTimes.reserve(keyCount + 2);
+                        clipValues.reserve((keyCount + 2) * stride);
+
+                        const float tStart = sd.startSec;
+                        const float tEnd = sd.endSec;
+                        if (!(tEnd > tStart))
+                            continue;
+
+                        // Start sample
+                        clipTimes.push_back(0.0f);
+                        if (stride == 3)
+                        {
+                            float v[3];
+                            SampleVec3At(times, values, keyCount, tStart, v);
+                            clipValues.insert(clipValues.end(), v, v + 3);
+                        }
+                        else
+                        {
+                            float q[4];
+                            SampleQuatAt(times, values, keyCount, tStart, q);
+                            clipValues.insert(clipValues.end(), q, q + 4);
+                        }
+
+                        // Interior exact keys
+                        for (uint32_t k = 0; k < keyCount; ++k)
+                        {
+                            const float tk = times[k];
+                            if (!(tk > tStart && tk < tEnd))
+                                continue;
+                            clipTimes.push_back(tk - tStart);
+                            const float *vk = values + size_t(k) * stride;
+                            clipValues.insert(clipValues.end(), vk, vk + stride);
+                        }
+
+                        // End sample
+                        clipTimes.push_back(tEnd - tStart);
+                        if (stride == 3)
+                        {
+                            float v[3];
+                            SampleVec3At(times, values, keyCount, tEnd, v);
+                            clipValues.insert(clipValues.end(), v, v + 3);
+                        }
+                        else
+                        {
+                            float q[4];
+                            SampleQuatAt(times, values, keyCount, tEnd, q);
+                            clipValues.insert(clipValues.end(), q, q + 4);
+                        }
+
+                        // Create new sampler
+                        sm::SModelAnimationSamplerRecord outS{};
+                        outS.firstTime = static_cast<uint32_t>(newTimes.size());
+                        outS.timeCount = static_cast<uint32_t>(clipTimes.size());
+                        outS.firstValue = static_cast<uint32_t>(newValues.size());
+                        outS.valueCount = static_cast<uint32_t>(clipValues.size());
+                        outS.interpolation = (uint8_t)sm::SModelAnimInterpolation::Linear;
+                        outS.valueType = srcS.valueType;
+
+                        newTimes.insert(newTimes.end(), clipTimes.begin(), clipTimes.end());
+                        newValues.insert(newValues.end(), clipValues.begin(), clipValues.end());
+
+                        const uint32_t outSamplerIndex = static_cast<uint32_t>(newSamplers.size());
+                        newSamplers.push_back(outS);
+
+                        sm::SModelAnimationChannelRecord outCh{};
+                        outCh.targetNode = srcCh.targetNode;
+                        outCh.path = srcCh.path;
+                        outCh.samplerIndex = static_cast<uint16_t>(outSamplerIndex);
+                        newChannels.push_back(outCh);
+                        outClip.channelCount++;
+                    }
+
+                    if (outClip.channelCount > 0)
+                        newClips.push_back(outClip);
+                }
+
+                if (!newClips.empty())
+                {
+                    animClips = std::move(newClips);
+                    animChannels = std::move(newChannels);
+                    animSamplers = std::move(newSamplers);
+                    animTimes = std::move(newTimes);
+                    animValues = std::move(newValues);
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Print animation clip summary (helps map indices into JSON)
+    // ------------------------------------------------------------
+    if (!animClips.empty())
+    {
+        std::cout << "\n=== SMODEL Animation Clips (index -> name/tag) ===\n";
+        for (uint32_t i = 0; i < static_cast<uint32_t>(animClips.size()); ++i)
+        {
+            const auto &c = animClips[i];
+            const char *nm = strings.data.empty() ? "" : (strings.data.data() + c.nameOffset);
+            const std::string name = (nm && nm[0] != '\0') ? std::string(nm) : (std::string("clip_") + std::to_string(i));
+            std::cout << "[clip " << i << "] "
+                      << "tag=" << InferAnimTag(name) << " "
+                      << "duration=" << c.durationSec << "s "
+                      << "channels=" << c.channelCount << " "
+                      << "name=\"" << name << "\"\n";
+        }
+        std::cout << "===============================================\n\n";
+
+        if (animClips.size() == 1)
+        {
+            std::cout << "Note: This asset has only 1 animation clip. If you expected multiple (idle/run/etc), export multiple glTF animations (e.g., Blender: enable 'All Actions') or provide a scene.clips.json sidecar to split the timeline.\n\n";
         }
     }
 

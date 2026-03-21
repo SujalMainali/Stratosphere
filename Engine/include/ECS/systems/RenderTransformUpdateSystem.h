@@ -67,6 +67,9 @@ public:
             const bool hasFacing = store.hasFacing();
             auto &facings = hasFacing ? const_cast<std::vector<Engine::ECS::Facing> &>(store.facings()) : m_dummyFacings;
 
+            const bool hasRenderModel = store.hasRenderModel();
+            auto &renderModels = hasRenderModel ? const_cast<std::vector<Engine::ECS::RenderModel> &>(store.renderModels()) : m_dummyRenderModels;
+
             const bool hasScale = store.hasRenderScale();
             auto &scales = hasScale ? const_cast<std::vector<Engine::ECS::RenderScale> &>(store.renderScales()) : m_dummyScales;
 
@@ -91,6 +94,7 @@ public:
 
                 const auto &pos = positions[row];
                 const float yaw = hasFacing ? facings[row].yaw : 0.0f;
+                const float yawOffset = hasRenderModel ? renderModels[row].yawOffset : 0.0f;
                 const float s = hasScale ? scales[row].uniform : 1.0f;
 
                 if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z))
@@ -101,8 +105,9 @@ public:
                     return;
 
                 glm::mat4 world = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, pos.y, pos.z));
-                if (hasFacing)
-                    world = glm::rotate(world, yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+                const float totalYaw = yaw + yawOffset;
+                if (std::abs(totalYaw) > 1e-9f)
+                    world = glm::rotate(world, totalYaw, glm::vec3(0.0f, 1.0f, 0.0f));
                 if (hasScale && s != 1.0f)
                     world = glm::scale(world, glm::vec3(s));
 
@@ -134,4 +139,5 @@ private:
 
     std::vector<Engine::ECS::Facing> m_dummyFacings;
     std::vector<Engine::ECS::RenderScale> m_dummyScales;
+    std::vector<Engine::ECS::RenderModel> m_dummyRenderModels;
 };

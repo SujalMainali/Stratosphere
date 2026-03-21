@@ -140,6 +140,25 @@ namespace Engine::ECS
                 const std::string modelPath = m[1].str();
                 if (!modelPath.empty())
                 {
+                    // Optional yaw offset (helps fix authored forward axis mismatches).
+                    // Supported keys inside "visual": yawOffsetDeg, yawOffsetRad
+                    float yawOffsetRad = 0.0f;
+                    {
+                        std::regex re_yaw_deg(R"re("visual"\s*:\s*\{[\s\S]*?"yawOffsetDeg"\s*:\s*([-+]?\d*\.?\d+))re");
+                        std::smatch my;
+                        if (std::regex_search(jsonText, my, re_yaw_deg))
+                        {
+                            constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
+                            yawOffsetRad = std::stof(my[1].str()) * kDegToRad;
+                        }
+                        else
+                        {
+                            std::regex re_yaw_rad(R"re("visual"\s*:\s*\{[\s\S]*?"yawOffsetRad"\s*:\s*([-+]?\d*\.?\d+))re");
+                            if (std::regex_search(jsonText, my, re_yaw_rad))
+                                yawOffsetRad = std::stof(my[1].str());
+                        }
+                    }
+
                     Engine::ModelHandle h = assets.loadModel(modelPath);
                     if (h.isValid())
                     {
@@ -148,6 +167,7 @@ namespace Engine::ECS
 
                         RenderModel rm{};
                         rm.handle = h;
+                        rm.yawOffset = yawOffsetRad;
                         p.defaults[rmId] = rm;
 
                         // Also add per-entity animation state.

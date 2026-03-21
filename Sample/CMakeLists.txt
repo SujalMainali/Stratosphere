@@ -68,6 +68,21 @@ if (STRATO_PROCESS_SAMPLE_GLTF)
         set(OUT_DIR  ${SAMPLE_GLTF_COOKED_DIR}/${REL_DIR})
         set(OUT_FILE ${OUT_DIR}/${BASE_NAME}.smodel)
 
+        # Optional sidecar(s) to split a single long animation into multiple clips.
+        # The tool checks for both:
+        #   <file>.clips.json   (e.g. scene.gltf.clips.json)
+        #   <stem>.clips.json   (e.g. scene.clips.json)
+        get_filename_component(GLTF_DIR ${GLTF_FILE} DIRECTORY)
+        set(CLIPS_SIDECAR_A "${GLTF_FILE}.clips.json")
+        set(CLIPS_SIDECAR_B "${GLTF_DIR}/${BASE_NAME}.clips.json")
+        set(EXTRA_COOK_DEPS "")
+        if (EXISTS "${CLIPS_SIDECAR_A}")
+            list(APPEND EXTRA_COOK_DEPS "${CLIPS_SIDECAR_A}")
+        endif()
+        if (EXISTS "${CLIPS_SIDECAR_B}")
+            list(APPEND EXTRA_COOK_DEPS "${CLIPS_SIDECAR_B}")
+        endif()
+
         add_custom_command(
  
             OUTPUT ${OUT_FILE}
@@ -75,7 +90,7 @@ if (STRATO_PROCESS_SAMPLE_GLTF)
             COMMAND GltfToSmodelTool
                 "${GLTF_FILE}"
                 "${OUT_FILE}"
-            DEPENDS GltfToSmodelTool "${GLTF_FILE}"
+            DEPENDS GltfToSmodelTool "${GLTF_FILE}" ${EXTRA_COOK_DEPS}
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             COMMENT "Cooking GLTF -> SMODEL: ${REL_PATH}"
             VERBATIM
