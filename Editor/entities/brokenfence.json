@@ -1,0 +1,28 @@
+{
+    "components": [
+        "Position",
+        "Obstacle",
+        "ObstacleRadius",
+        "Facing",
+        "RenderMesh",
+        "RenderScale",
+        "Separation"
+    ],
+    "defaults": {
+        "Facing": {},
+        "Obstacle": {},
+        "ObstacleRadius": {},
+        "Position": {},
+        "RenderMesh": {},
+        "RenderScale": {
+            "uniform": 10
+        },
+        "Separation": {
+            "value": 2.0
+        }
+    },
+    "name": "brokenfence",
+    "visual": {
+        "model": "assets/wood_fence/scene.smodel"
+    }
+}

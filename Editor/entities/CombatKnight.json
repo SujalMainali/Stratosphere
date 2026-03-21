@@ -1,5 +1,4 @@
 {
-    "name": "CombatKnight",
     "components": [
         "Position",
         "Velocity",
@@ -20,76 +19,77 @@
         "RenderScale"
     ],
     "defaults": {
+        "AttackCooldown": {
+            "interval": 1.5,
+            "timer": 0.0
+        },
+        "AvoidanceParams": {
+            "blend": 0.6,
+            "falloffWeight": 0.35,
+            "interactSlack": 0.35,
+            "maxAccel": 30.0,
+            "maxStopSpeed": 0.9,
+            "nearGoalBoost": 2.5,
+            "nearGoalRadius": 2.0,
+            "predictionTime": 0.55,
+            "predictiveWeight": 0.75,
+            "pressureBoost": 1.5,
+            "stoppedBoost": 2.0,
+            "strength": 3.5
+        },
+        "CombatClips": {
+            "attackEnd": 43,
+            "attackStart": 36,
+            "damageEnd": 56,
+            "damageStart": 52,
+            "deathEnd": 64,
+            "deathStart": 61
+        },
+        "Facing": {
+            "yaw": 0.0
+        },
+        "Health": {
+            "value": 140.0
+        },
+        "LocomotionClips": {
+            "idleClip": 65,
+            "runClip": 28,
+            "walkClip": 112
+        },
+        "MoveSpeed": {
+            "value": 5.0
+        },
+        "MoveTarget": {
+            "active": 0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+        },
+        "Path": {},
         "Position": {
             "x": 0.0,
             "y": 0.0,
             "z": 0.0
         },
+        "Radius": {
+            "r": 1.5
+        },
+        "RenderScale": {
+            "uniform": 2.0
+        },
+        "Separation": {
+            "value": 2.0
+        },
+        "Team": {
+            "id": 0
+        },
         "Velocity": {
             "x": 0.0,
             "y": 0.0,
             "z": 0.0
-        },
-        "Health": {
-            "value": 140.0
-        },
-        "MoveTarget": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0,
-            "active": 0
-        },
-        "MoveSpeed": {
-            "value": 5.0
-        },
-        "Radius": {
-            "r": 1.5
-        },
-        "Separation": {
-            "value": 1.0
-        },
-        "AvoidanceParams": {
-            "strength": 3.5,
-            "maxAccel": 30.0,
-            "blend": 0.6,
-            "predictionTime": 0.55,
-            "interactSlack": 0.35,
-            "falloffWeight": 0.35,
-            "predictiveWeight": 0.75,
-            "pressureBoost": 1.5,
-            "nearGoalRadius": 2.0,
-            "nearGoalBoost": 2.5,
-            "stoppedBoost": 2.0,
-            "maxStopSpeed": 0.9
-        },
-        "Facing": {
-            "yaw": 0.0
-        },
-        "Path": {},
-        "Team": {
-            "id": 0
-        },
-        "AttackCooldown": {
-            "timer": 0.0,
-            "interval": 1.5
-        },
-        "LocomotionClips": {
-            "idleClip": 65,
-            "walkClip": 112,
-            "runClip": 28
-        },
-        "CombatClips": {
-            "attackStart": 36,
-            "attackEnd": 43,
-            "damageStart": 52,
-            "damageEnd": 56,
-            "deathStart": 61,
-            "deathEnd": 64
-        },
-         "RenderScale": {
-            "uniform": 1.0
-         }
+        }
     },
+    "name": "CombatKnight",
     "visual": {
         "model": "assets/Knight/Knight.smodel"
     }

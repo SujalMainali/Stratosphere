@@ -1,32 +1,30 @@
 {
     "components": [
         "Position",
-        "Radius",
-        "Separation",
-        "RenderMesh",
         "Obstacle",
         "ObstacleRadius",
-        "RenderBounds",
-        "VisibilityState",
-        "RenderScale"
+        "RenderScale",
+        "RenderMesh",
+        "Radius",
+        "Separation"
     ],
     "defaults": {
         "Obstacle": {},
         "ObstacleRadius": {
-            "r": 10.0
+            "r": 5.0
         },
         "Position": {},
         "Radius": {},
         "RenderMesh": {},
         "RenderScale": {
-            "uniform": 15.0
+            "uniform": 1.5
         },
         "Separation": {
-            "value": 0.0
+            "value": 1.0
         }
     },
-    "name": "bushes",
+    "name": "flower",
     "visual": {
-        "model": "assets/bushes/scene.smodel"
+        "model": "assets/flower1/Flower_5_Clump.smodel"
     }
 }

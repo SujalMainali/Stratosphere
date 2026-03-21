@@ -1,0 +1,30 @@
+{
+    "components": [
+        "Position",
+        "Obstacle",
+        "ObstacleRadius",
+        "RenderScale",
+        "RenderMesh",
+        "Separation",
+        "Facing"
+    ],
+    "defaults": {
+        "Facing": {
+            "yaw": 0.0
+        },
+        "Obstacle": {},
+        "ObstacleRadius": {
+            "r": 2.0
+        },
+        "Position": {},
+        "RenderMesh": {},
+        "RenderScale": {
+            "uniform": 3
+        },
+        "Separation": {}
+    },
+    "name": "widefence",
+    "visual": {
+        "model": "assets/wooden_fence_-19mb/scene.smodel"
+    }
+}

@@ -1,0 +1,24 @@
+{
+    "components": [
+        "Position",
+        "Obstacle",
+        "ObstacleRadius",
+        "Radius",
+        "RenderMesh",
+        "RenderScale",
+        "Separation"
+    ],
+    "defaults": {
+        "Obstacle": {},
+        "ObstacleRadius": {},
+        "Position": {},
+        "Radius": {},
+        "RenderMesh": {},
+        "RenderScale": {},
+        "Separation": {}
+    },
+    "name": "grass",
+    "visual": {
+        "model": "assets/simple_grass_chunks/scene.smodel"
+    }
+}

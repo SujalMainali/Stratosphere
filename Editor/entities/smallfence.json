@@ -1,32 +1,30 @@
 {
     "components": [
         "Position",
-        "Radius",
-        "Separation",
-        "RenderMesh",
         "Obstacle",
         "ObstacleRadius",
-        "RenderBounds",
-        "VisibilityState",
-        "RenderScale"
+        "RenderScale",
+        "RenderMesh",
+        "Radius",
+        "Facing"
     ],
     "defaults": {
+        "Facing": {
+            "yaw": 80.0
+        },
         "Obstacle": {},
         "ObstacleRadius": {
-            "r": 10.0
+            "r": 2.0
         },
         "Position": {},
         "Radius": {},
         "RenderMesh": {},
         "RenderScale": {
-            "uniform": 15.0
-        },
-        "Separation": {
-            "value": 0.0
+            "uniform": 2
         }
     },
-    "name": "bushes",
+    "name": "smallfence",
     "visual": {
-        "model": "assets/bushes/scene.smodel"
+        "model": "assets/valheim_wooden_fence_viking_architecture/scene.smodel"
     }
 }

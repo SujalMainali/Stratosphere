@@ -5,24 +5,27 @@
         "Separation",
         "RenderMesh",
         "Obstacle",
-        "ObstacleRadius", 
+        "ObstacleRadius",
         "RenderBounds",
         "VisibilityState",
         "RenderScale"
     ],
     "defaults": {
         "Obstacle": {},
-        "ObstacleRadius": {},
+        "ObstacleRadius": {
+            "r": 10.0
+        },
         "Position": {},
         "Radius": {},
         "RenderMesh": {},
-        "Separation": {},
         "RenderScale": {
-            "uniform": 10.0
+            "uniform": 15.0
+        },
+        "Separation": {
+            "value": 0.0
         }
     },
     "name": "bushes",
-    
     "visual": {
         "model": "assets/bushes/scene.smodel"
     }

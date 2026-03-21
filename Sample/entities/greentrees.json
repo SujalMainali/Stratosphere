@@ -1,0 +1,26 @@
+{
+    "components": [
+        "Position",
+        "Obstacle",
+        "ObstacleRadius",
+        "RenderScale",
+        "RenderMesh",
+        "Radius",
+        "Separation"
+    ],
+    "defaults": {
+        "Obstacle": {},
+        "ObstacleRadius": {},
+        "Position": {},
+        "Radius": {},
+        "RenderMesh": {},
+        "RenderScale": {
+            "uniform": 5
+        },
+        "Separation": {}
+    },
+    "name": "greentrees",
+    "visual": {
+        "model": "assets/Trees_out/Trees.smodel"
+    }
+}

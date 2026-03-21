@@ -83,10 +83,10 @@ public:
             if (m_workerScratch.size() < scratchCount)
                 m_workerScratch.resize(scratchCount);
 
-            auto processRow = [&](uint32_t workerIndex, uint32_t i)
+            auto processRow = [&](uint32_t workerIndex, uint32_t i) -> bool
             {
                 if (i >= n)
-                    return;
+                    return false;
 
                 WorkerScratch &scratch = m_workerScratch[std::min(workerIndex, scratchCount - 1u)];
 
@@ -99,7 +99,7 @@ public:
                     path.valid = false;
                     path.count = 0;
                     path.current = 0;
-                    return;
+                    return false;
                 }
 
                 // MoveTarget became dirty => treat this as a new goal and replan.
@@ -113,22 +113,37 @@ public:
 
                 runAStar(scratch, pos, tgt, path);
 
-                if (tgt.x != oldTx || tgt.z != oldTz)
-                {
-                    // Keep other systems (and future frames) aware that the goal changed.
-                    ecs.markDirty(m_moveTargetId, archetypeId, i);
-                }
+                return (tgt.x != oldTx || tgt.z != oldTz);
             };
 
             if (ecs.jobSystem && dirtyRows.size() >= PARALLEL_DIRTY_ROW_THRESHOLD)
             {
+                std::vector<uint8_t> goalChanged;
+                goalChanged.resize(dirtyRows.size(), 0u);
+
                 ecs.jobSystem->parallelFor(static_cast<uint32_t>(dirtyRows.size()), [&](uint32_t worker, uint32_t item)
-                                           { processRow(worker, dirtyRows[item]); });
+                                           {
+                                               const uint32_t row = dirtyRows[item];
+                                               if (processRow(worker, row))
+                                                   goalChanged[item] = 1u;
+                                           });
+
+                // Keep other systems (and future frames) aware that the goal changed.
+                // Do this single-threaded to avoid any potential QueryManager resizing races.
+                for (uint32_t item = 0; item < static_cast<uint32_t>(dirtyRows.size()); ++item)
+                {
+                    if (!goalChanged[item])
+                        continue;
+                    ecs.markDirty(m_moveTargetId, archetypeId, dirtyRows[item]);
+                }
             }
             else
             {
                 for (uint32_t i : dirtyRows)
-                    processRow(0u, i);
+                {
+                    if (processRow(0u, i))
+                        ecs.markDirty(m_moveTargetId, archetypeId, i);
+                }
             }
         }
     }
@@ -206,6 +221,51 @@ private:
         const int W = m_grid->width;
         const int H = m_grid->height;
 
+        if (!std::isfinite(startPos.x) || !std::isfinite(startPos.z) ||
+            !std::isfinite(target.x) || !std::isfinite(target.z))
+        {
+            outPath.valid = false;
+            outPath.count = 0;
+            outPath.current = 0;
+            return;
+        }
+
+        auto clampI = [](int v, int lo, int hi)
+        {
+            return (v < lo) ? lo : (v > hi) ? hi
+                                            : v;
+        };
+
+        auto tryRelocateToWalkable = [&](int &x, int &z) -> bool
+        {
+            if (m_grid->isWalkable(x, z))
+                return true;
+
+            for (int r = 1; r <= 10; ++r)
+            {
+                for (int dx = -r; dx <= r; ++dx)
+                {
+                    for (int dz = -r; dz <= r; ++dz)
+                    {
+                        if (std::abs(dx) != r && std::abs(dz) != r)
+                            continue;
+
+                        int nx = x + dx;
+                        int nz = z + dz;
+                        if (!m_grid->isValid(nx, nz))
+                            continue;
+                        if (m_grid->isWalkable(nx, nz))
+                        {
+                            x = nx;
+                            z = nz;
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        };
+
         auto idx = [W](int x, int z)
         { return z * W + x; };
         auto idxToX = [W](int i)
@@ -213,40 +273,32 @@ private:
         auto idxToZ = [W](int i)
         { return i / W; };
 
-        const int startX = m_grid->worldToGridX(startPos.x);
-        const int startZ = m_grid->worldToGridZ(startPos.z);
-        int targetX = std::max(0, std::min(W - 1, m_grid->worldToGridX(target.x)));
-        int targetZ = std::max(0, std::min(H - 1, m_grid->worldToGridZ(target.z)));
+        int startX = clampI(m_grid->worldToGridX(startPos.x), 0, W - 1);
+        int startZ = clampI(m_grid->worldToGridZ(startPos.z), 0, H - 1);
+        int targetX = clampI(m_grid->worldToGridX(target.x), 0, W - 1);
+        int targetZ = clampI(m_grid->worldToGridZ(target.z), 0, H - 1);
+
+        // If the entity starts inside an inflated/blocked cell, nudge the start cell to the nearest
+        // walkable cell so we don't produce invalid indices or dead-end A*.
+        if (!tryRelocateToWalkable(startX, startZ))
+        {
+            outPath.valid = false;
+            outPath.count = 0;
+            outPath.current = 0;
+            return;
+        }
 
         bool relocatedTarget = false;
 
         if (!m_grid->isWalkable(targetX, targetZ))
         {
-            bool relocated = false;
-            for (int r = 1; r <= 10 && !relocated; ++r)
-            {
-                for (int dx = -r; dx <= r && !relocated; ++dx)
-                {
-                    for (int dz = -r; dz <= r && !relocated; ++dz)
-                    {
-                        if (std::abs(dx) != r && std::abs(dz) != r)
-                            continue;
-                        int nx = targetX + dx, nz = targetZ + dz;
-                        if (m_grid->isWalkable(nx, nz))
-                        {
-                            targetX = nx;
-                            targetZ = nz;
-                            relocated = true;
-                        }
-                    }
-                }
-            }
-            if (!relocated)
+            if (!tryRelocateToWalkable(targetX, targetZ))
             {
                 outPath.valid = false;
+                outPath.count = 0;
+                outPath.current = 0;
                 return;
             }
-
             relocatedTarget = true;
         }
 

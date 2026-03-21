@@ -1,32 +1,32 @@
 {
     "components": [
         "Position",
-        "Radius",
-        "Separation",
-        "RenderMesh",
         "Obstacle",
         "ObstacleRadius",
-        "RenderBounds",
-        "VisibilityState",
-        "RenderScale"
+        "RenderMesh",
+        "RenderScale",
+        "Radius",
+        "Separation",
+        "Facing"
     ],
     "defaults": {
+        "Facing": {},
         "Obstacle": {},
         "ObstacleRadius": {
-            "r": 10.0
+            "r": 4.900000095367432
         },
         "Position": {},
         "Radius": {},
         "RenderMesh": {},
         "RenderScale": {
-            "uniform": 15.0
+            "uniform": 1.5
         },
         "Separation": {
             "value": 0.0
         }
     },
-    "name": "bushes",
+    "name": "smallbush",
     "visual": {
-        "model": "assets/bushes/scene.smodel"
+        "model": "assets/bush1/Bush_Small_Flowers.smodel"
     }
 }

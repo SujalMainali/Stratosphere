@@ -974,6 +974,21 @@ namespace Engine
             std::memcpy(model->animValues.data(), view.animValues, sizeof(float) * view.animValuesCount());
         }
 
+#if !defined(ENGINE_PRODUCTION) || !ENGINE_PRODUCTION
+        if (view.animClipCount() > 0)
+        {
+            std::cerr << "[AssetManager] Model anim clips for '" << cookedModelPath << "' (index -> name, duration, channels):\n";
+            for (uint32_t i = 0; i < view.animClipCount(); ++i)
+            {
+                const auto &clip = view.animClips[i];
+                const char *nm = view.getStringOrEmpty(clip.nameOffset);
+                if (!nm || nm[0] == '\0')
+                    nm = "(unnamed)";
+                std::cerr << "  [" << i << "] " << nm << "  dur=" << clip.durationSec << "s  channels=" << clip.channelCount << "\n";
+            }
+        }
+#endif
+
         // --------------------------
         // Initialize runtime animation TRS buffers from node local matrices
         // --------------------------

@@ -1,5 +1,4 @@
 {
-    "name": "TreeStumpWall",
     "components": [
         "Position",
         "Obstacle",
@@ -8,33 +7,36 @@
         "Facing",
         "RenderModel",
         "RenderAnimation",
-                "RenderBounds",
+        "RenderBounds",
         "VisibilityState",
         "RenderScale",
-         "RenderBounds",
+        "RenderBounds",
         "VisibilityState",
         "RenderScale"
     ],
     "defaults": {
+        "Facing": {
+            "yaw": 0.0
+        },
+        "Obstacle": {},
+        "ObstacleRadius": {
+            "r": 5.0
+        },
         "Position": {
             "x": 0.0,
             "y": 0.0,
             "z": 0.0
         },
-        "ObstacleRadius": {
-            "r": 1.5
-        },
-        "Facing": {
-            "yaw": 0.0
-        },
         "RenderAnimation": {
             "clipIndex": 0,
             "playing": false
         },
+        "RenderMesh": {},
         "RenderScale": {
-            "uniform": 1.0
-         }
+            "uniform": 5.0
+        }
     },
+    "name": "TreeStumpWall",
     "visual": {
         "model": "assets/tree_stump/tree_stump.smodel"
     }

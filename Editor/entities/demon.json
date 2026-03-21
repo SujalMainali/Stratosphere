@@ -14,8 +14,8 @@
         "AttackCooldown",
         "LocomotionClips",
         "CombatClips",
-        "RenderScale",
-        "RenderMesh"
+        "RenderMesh",
+        "RenderScale"
     ],
     "defaults": {
         "AttackCooldown": {},
@@ -31,16 +31,14 @@
         "Radius": {},
         "RenderMesh": {},
         "RenderScale": {
-            "uniform": 2
+            "uniform": 4
         },
-        "Separation": {
-            "value": 1.0
-        },
+        "Separation": {},
         "Team": {},
         "Velocity": {}
     },
-    "name": "FantasyWarrior",
+    "name": "demon",
     "visual": {
-        "model": "assets/FantasyWarrior/scene.smodel"
+        "model": "assets/demon/scene.smodel"
     }
 }

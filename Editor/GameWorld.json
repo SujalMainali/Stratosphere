@@ -1,30 +1,5 @@
 {
-    "anchors": {
-        "1": {
-            "x": 0.0,
-            "z": 0.0
-        },
-        "2": {
-            "x": 100.0,
-            "z": 200.0
-        },
-        "bush": {
-            "x": 300.0,
-            "z": 200.0
-        },
-        "bush1": {
-            "x": 300.0,
-            "z": -200.0
-        },
-        "bush2": {
-            "x": -300.0,
-            "z": 200.0
-        },
-        "bush3": {
-            "x": -300.0,
-            "z": -200.0
-        }
-    },
+    "anchors": {},
     "combat": {},
     "obstacles": [
         {
@@ -33,8 +8,8 @@
                 "z": 500.0
             },
             "gaps": [],
-            "prefab": "bushes",
-            "spacing": 10.0,
+            "prefab": "tree4",
+            "spacing": 20.0,
             "start": {
                 "x": 500.0,
                 "z": 500.0
@@ -46,8 +21,8 @@
                 "z": -500.0
             },
             "gaps": [],
-            "prefab": "bushes",
-            "spacing": 10.0,
+            "prefab": "tree4",
+            "spacing": 20.0,
             "start": {
                 "x": -500.0,
                 "z": 500.0
@@ -59,8 +34,8 @@
                 "z": -500.0
             },
             "gaps": [],
-            "prefab": "bushes",
-            "spacing": 10.0,
+            "prefab": "tree4",
+            "spacing": 20.0,
             "start": {
                 "x": -500.0,
                 "z": -500.0
@@ -72,8 +47,8 @@
                 "z": 500.0
             },
             "gaps": [],
-            "prefab": "bushes",
-            "spacing": 10.0,
+            "prefab": "tree4",
+            "spacing": 20.0,
             "start": {
                 "x": 500.0,
                 "z": -500.0
@@ -81,12 +56,12 @@
         },
         {
             "end": {
-                "x": -370.0,
+                "x": -290.0,
                 "z": -492.0
             },
             "gaps": [],
             "prefab": "tree4",
-            "spacing": 5.0,
+            "spacing": 20.0,
             "start": {
                 "x": -490.0,
                 "z": -492.0
@@ -99,7 +74,7 @@
             },
             "gaps": [],
             "prefab": "tree4",
-            "spacing": 5.0,
+            "spacing": 20.0,
             "start": {
                 "x": -490.0,
                 "z": -492.0
@@ -107,132 +82,509 @@
         },
         {
             "end": {
-                "x": -427.0,
-                "z": -366.0
+                "x": -290.0,
+                "z": -212.0
             },
             "gaps": [],
             "prefab": "tree4",
-            "spacing": 5.0,
+            "spacing": 20.0,
             "start": {
-                "x": -490.0,
-                "z": -405.0
-            }
-        },
-        {
-            "end": {
-                "x": -388.0,
-                "z": -411.0
-            },
-            "gaps": [],
-            "prefab": "tree4",
-            "spacing": 5.0,
-            "start": {
-                "x": -370.0,
+                "x": -290.0,
                 "z": -492.0
             }
         },
         {
             "end": {
-                "x": 490.0,
-                "z": 356.0
-            },
-            "gaps": [],
-            "prefab": "TreeStumpWall",
-            "spacing": 5.0,
-            "start": {
                 "x": 487.0,
-                "z": 487.0
-            }
-        },
-        {
-            "end": {
-                "x": 345.0,
-                "z": 481.0
+                "z": 470.0
             },
             "gaps": [],
             "prefab": "TreeStumpWall",
-            "spacing": 5.0,
+            "spacing": 40.0,
             "start": {
-                "x": 487.0,
-                "z": 487.0
+                "x": 187.0,
+                "z": 470.0
             }
         },
         {
             "end": {
-                "x": 460.0,
-                "z": 430.0
+                "x": 371.0,
+                "z": 295.0
             },
             "gaps": [],
             "prefab": "TreeStumpWall",
-            "spacing": 5.0,
+            "spacing": 40.0,
             "start": {
-                "x": 490.0,
-                "z": 430.0
+                "x": 471.0,
+                "z": 295.0
             }
         },
         {
             "end": {
-                "x": 415.0,
-                "z": 440.0
+                "x": 310.0,
+                "z": 320.0
             },
             "gaps": [],
             "prefab": "TreeStumpWall",
+            "spacing": 40.0,
+            "start": {
+                "x": 310.0,
+                "z": 460.0
+            }
+        },
+        {
+            "end": {
+                "x": 471.0,
+                "z": 134.0
+            },
+            "gaps": [],
+            "prefab": "TreeStumpWall",
+            "spacing": 40.0,
+            "start": {
+                "x": 471.0,
+                "z": 434.0
+            }
+        },
+        {
+            "end": {
+                "x": -487.0,
+                "z": -202.0
+            },
+            "gaps": [],
+            "prefab": "tree4",
+            "spacing": 30.0,
+            "start": {
+                "x": -487.0,
+                "z": -402.0
+            }
+        },
+        {
+            "end": {
+                "x": -100.0,
+                "z": 355.0
+            },
+            "gaps": [],
+            "prefab": "bushes",
+            "spacing": 0.10000000149011612,
+            "start": {
+                "x": -95.0,
+                "z": 355.0
+            }
+        },
+        {
+            "end": {
+                "x": -355.0,
+                "z": 115.0
+            },
+            "gaps": [],
+            "prefab": "bushes",
             "spacing": 3.0,
             "start": {
-                "x": 418.0,
-                "z": 481.0
+                "x": -350.0,
+                "z": 115.0
             }
         },
         {
             "end": {
-                "x": -20.0,
-                "z": -48.0
+                "x": -440.0,
+                "z": -291.0
             },
             "gaps": [],
-            "prefab": "bushes",
-            "spacing": 10.0,
+            "prefab": "smallbush",
+            "spacing": 5.0,
             "start": {
-                "x": -388.0,
-                "z": -411.0
+                "x": -470.0,
+                "z": -291.0
             }
         },
         {
             "end": {
-                "x": -39.0,
-                "z": -26.0
+                "x": -410.0,
+                "z": -386.0
             },
             "gaps": [],
-            "prefab": "bushes",
-            "spacing": 10.0,
+            "prefab": "smallbush",
+            "spacing": 5.0,
             "start": {
-                "x": -407.0,
-                "z": -389.0
+                "x": -390.0,
+                "z": -386.0
             }
         },
         {
             "end": {
-                "x": -427.0,
-                "z": -145.0
+                "x": -452.0,
+                "z": -363.0
             },
             "gaps": [],
-            "prefab": "bushes",
-            "spacing": 10.0,
+            "prefab": "smallbush",
+            "spacing": 5.0,
             "start": {
-                "x": -427.0,
-                "z": -366.0
+                "x": -472.0,
+                "z": -363.0
             }
         },
         {
             "end": {
-                "x": -407.0,
-                "z": -145.0
+                "x": -400.0,
+                "z": -328.0
             },
             "gaps": [],
-            "prefab": "bushes",
+            "prefab": "smallbush",
+            "spacing": 5.0,
+            "start": {
+                "x": -355.0,
+                "z": -328.0
+            }
+        },
+        {
+            "end": {
+                "x": -375.0,
+                "z": -274.0
+            },
+            "gaps": [],
+            "prefab": "smallbush",
+            "spacing": 5.0,
+            "start": {
+                "x": -300.0,
+                "z": -274.0
+            }
+        },
+        {
+            "end": {
+                "x": -424.0,
+                "z": -243.0
+            },
+            "gaps": [],
+            "prefab": "smallbush",
+            "spacing": 5.0,
+            "start": {
+                "x": -474.0,
+                "z": -243.0
+            }
+        },
+        {
+            "end": {
+                "x": 225.0,
+                "z": 254.0
+            },
+            "gaps": [],
+            "prefab": "TreeStumpWall",
+            "spacing": 40.0,
+            "start": {
+                "x": 225.0,
+                "z": 454.0
+            }
+        },
+        {
+            "end": {
+                "x": 196.0,
+                "z": 236.0
+            },
+            "gaps": [],
+            "prefab": "tree1",
+            "spacing": 18.0,
+            "start": {
+                "x": 198.0,
+                "z": 440.0
+            }
+        },
+        {
+            "end": {
+                "x": 180.0,
+                "z": 225.0
+            },
+            "gaps": [],
+            "prefab": "tree1",
+            "spacing": 18.0,
+            "start": {
+                "x": 180.0,
+                "z": 440.0
+            }
+        },
+        {
+            "end": {
+                "x": 165.0,
+                "z": 240.0
+            },
+            "gaps": [],
+            "prefab": "tree1",
+            "spacing": 18.0,
+            "start": {
+                "x": 165.0,
+                "z": 440.0
+            }
+        },
+        {
+            "end": {
+                "x": 325.0,
+                "z": 241.0
+            },
+            "gaps": [],
+            "prefab": "tree1",
+            "spacing": 18.0,
+            "start": {
+                "x": 445.0,
+                "z": 241.0
+            }
+        },
+        {
+            "end": {
+                "x": 325.0,
+                "z": 220.0
+            },
+            "gaps": [],
+            "prefab": "tree1",
+            "spacing": 18.0,
+            "start": {
+                "x": 445.0,
+                "z": 220.0
+            }
+        },
+        {
+            "end": {
+                "x": 325.0,
+                "z": 200.0
+            },
+            "gaps": [],
+            "prefab": "tree1",
+            "spacing": 18.0,
+            "start": {
+                "x": 445.0,
+                "z": 200.0
+            }
+        },
+        {
+            "end": {
+                "x": 325.0,
+                "z": 180.0
+            },
+            "gaps": [],
+            "prefab": "tree1",
+            "spacing": 18.0,
+            "start": {
+                "x": 445.0,
+                "z": 180.0
+            }
+        },
+        {
+            "end": {
+                "x": 325.0,
+                "z": 160.0
+            },
+            "gaps": [],
+            "prefab": "tree1",
+            "spacing": 18.0,
+            "start": {
+                "x": 445.0,
+                "z": 160.0
+            }
+        },
+        {
+            "end": {
+                "x": 268.0,
+                "z": 301.0
+            },
+            "gaps": [],
+            "prefab": "tree1",
             "spacing": 10.0,
             "start": {
-                "x": -407.0,
-                "z": -389.0
+                "x": 268.0,
+                "z": 431.0
+            }
+        },
+        {
+            "end": {
+                "x": -122.0,
+                "z": -357.0
+            },
+            "gaps": [],
+            "prefab": "building",
+            "spacing": 20.0,
+            "start": {
+                "x": -122.0,
+                "z": -357.0
+            }
+        },
+        {
+            "end": {
+                "x": 288.0,
+                "z": -362.0
+            },
+            "gaps": [],
+            "prefab": "building",
+            "spacing": 20.0,
+            "start": {
+                "x": 288.0,
+                "z": -362.0
+            }
+        },
+        {
+            "end": {
+                "x": 0.0,
+                "z": 485.0
+            },
+            "gaps": [],
+            "prefab": "widefence",
+            "spacing": 20.0,
+            "start": {
+                "x": -475.0,
+                "z": 485.0
+            }
+        },
+        {
+            "end": {
+                "x": -225.0,
+                "z": 0.0
+            },
+            "gaps": [],
+            "prefab": "widefence",
+            "spacing": 20.0,
+            "start": {
+                "x": -470.0,
+                "z": 0.0
+            }
+        },
+        {
+            "end": {
+                "x": -485.0,
+                "z": 0.0
+            },
+            "gaps": [],
+            "prefab": "smallfence",
+            "spacing": 10.0,
+            "start": {
+                "x": -485.0,
+                "z": 475.0
+            }
+        },
+        {
+            "end": {
+                "x": 0.0,
+                "z": 285.0
+            },
+            "gaps": [],
+            "prefab": "smallfence",
+            "spacing": 10.0,
+            "start": {
+                "x": 0.0,
+                "z": 480.0
+            }
+        },
+        {
+            "end": {
+                "x": 4.0,
+                "z": -73.0
+            },
+            "gaps": [],
+            "prefab": "woodenboard",
+            "spacing": 5.0,
+            "start": {
+                "x": 4.0,
+                "z": -73.0
+            }
+        },
+        {
+            "end": {
+                "x": 57.0,
+                "z": -13.0
+            },
+            "gaps": [],
+            "prefab": "woodenboard",
+            "spacing": 10.0,
+            "start": {
+                "x": 57.0,
+                "z": -13.0
+            }
+        },
+        {
+            "end": {
+                "x": 7.0,
+                "z": 40.0
+            },
+            "gaps": [],
+            "prefab": "woodenboard",
+            "spacing": 10.0,
+            "start": {
+                "x": 7.0,
+                "z": 40.0
+            }
+        },
+        {
+            "end": {
+                "x": -50.0,
+                "z": -19.0
+            },
+            "gaps": [],
+            "prefab": "woodenboard",
+            "spacing": 3.0,
+            "start": {
+                "x": -50.0,
+                "z": -19.0
+            }
+        },
+        {
+            "end": {
+                "x": -210.0,
+                "z": -38.0
+            },
+            "gaps": [],
+            "prefab": "brokenfence",
+            "spacing": 25.0,
+            "start": {
+                "x": -210.0,
+                "z": -80.0
+            }
+        },
+        {
+            "end": {
+                "x": -287.0,
+                "z": -215.0
+            },
+            "gaps": [],
+            "prefab": "brokenfence",
+            "spacing": 3.0,
+            "start": {
+                "x": -287.0,
+                "z": -215.0
+            }
+        },
+        {
+            "end": {
+                "x": -320.0,
+                "z": -11.0
+            },
+            "gaps": [],
+            "prefab": "smallbush",
+            "spacing": 8.0,
+            "start": {
+                "x": -220.0,
+                "z": -11.0
+            }
+        },
+        {
+            "end": {
+                "x": -400.0,
+                "z": -162.0
+            },
+            "gaps": [],
+            "prefab": "smallbush",
+            "spacing": 8.0,
+            "start": {
+                "x": -300.0,
+                "z": -162.0
+            }
+        },
+        {
+            "end": {
+                "x": -491.0,
+                "z": -80.0
+            },
+            "gaps": [],
+            "prefab": "smallbush",
+            "spacing": 8.0,
+            "start": {
+                "x": -361.0,
+                "z": -80.0
             }
         }
     ],
@@ -248,18 +600,18 @@
                 "radius_m": 5.0,
                 "spacing_m": 5.0
             },
-            "id": "spawn_groups",
+            "id": "Warrior",
             "offset": {
-                "x": 0.0,
-                "z": 0.0
+                "x": 71.0,
+                "z": -353.0
             },
             "team": 1,
-            "unitType": "CombatKnight"
+            "unitType": "Warrior"
         },
         {
             "anchor": "",
             "count": 1,
-            "facingYawDeg": -120.0,
+            "facingYawDeg": 40.0,
             "formation": {
                 "columns": 0,
                 "jitter_m": 0.20000000298023224,
@@ -268,30 +620,11 @@
             },
             "id": "boss",
             "offset": {
-                "x": 455.0,
-                "z": 458.0
+                "x": 390.0,
+                "z": 382.0
             },
-            "team": 0,
+            "team": 1,
             "unitType": "boss"
-        },
-        {
-            "anchor": "1",
-            "count": 0,
-            "facingYawDeg": 0.0,
-            "formation": {
-                "columns": 65,
-                "jitter_m": 0.20000000298023224,
-                "kind": "grid",
-                "radius_m": 50.0,
-                "spacing_m": 15.0
-            },
-            "id": "bush",
-            "offset": {
-                "x": 0.0,
-                "z": 0.0
-            },
-            "team": 0,
-            "unitType": "bushes"
         },
         {
             "anchor": "",
@@ -303,32 +636,87 @@
                 "kind": "grid",
                 "spacing_m": 5.0
             },
-            "id": "spawn_group1",
+            "id": "CombatKnight",
             "offset": {
-                "x": -435.0,
-                "z": -465.0
+                "x": -392.0,
+                "z": -457.0
             },
-            "team": 2,
+            "team": 1,
             "unitType": "CombatKnight"
         },
         {
             "anchor": "",
-            "count": 30,
-            "facingYawDeg": 0.0,
+            "count": 20,
+            "facingYawDeg": 360.0,
             "formation": {
                 "columns": 5,
                 "jitter_m": 0.20000000298023224,
                 "kind": "grid",
                 "radius_m": 5.0,
+                "spacing_m": 8.0
+            },
+            "id": "FantasyWarrior",
+            "offset": {
+                "x": 0.0,
+                "z": 0.0
+            },
+            "team": 0,
+            "unitType": "FantasyWarrior"
+        },
+        {
+            "anchor": "",
+            "count": 20,
+            "facingYawDeg": 0.0,
+            "formation": {
+                "columns": 5,
+                "jitter_m": 0.20000000298023224,
+                "kind": "circle",
+                "radius_m": 40.0,
+                "spacing_m": 3.0
+            },
+            "id": "flower",
+            "offset": {
+                "x": 2.0,
+                "z": -12.0
+            },
+            "team": 0,
+            "unitType": "flower"
+        },
+        {
+            "anchor": "",
+            "count": 650,
+            "facingYawDeg": 0.0,
+            "formation": {
+                "columns": 25,
+                "jitter_m": 0.20000000298023224,
+                "kind": "grid",
                 "spacing_m": 5.0
             },
-            "id": "spawn_fantasy_warriors",
+            "id": "grass",
             "offset": {
-                "x": 30.0,
-                "z": 30.0
+                "x": 390.0,
+                "z": 380.0
             },
-            "team": 3,
-            "unitType": "FantasyWarrior"
+            "team": 0,
+            "unitType": "grass"
+        },
+        {
+            "anchor": "",
+            "count": 1,
+            "facingYawDeg": 0.0,
+            "formation": {
+                "columns": 5,
+                "jitter_m": 0.20000000298023224,
+                "kind": "grid",
+                "spacing_m": 5.0
+            },
+            "id": "demon",
+            "offset": {
+                "x": 0.0,
+                "z": 0.0
+            },
+            "team": 1,
+            "unitType": "demon"
         }
     ]
 }

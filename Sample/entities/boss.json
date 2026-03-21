@@ -14,15 +14,18 @@
         "AttackCooldown",
         "LocomotionClips",
         "CombatClips",
-         "RenderBounds",
+        "RenderBounds",
         "VisibilityState",
-        "RenderScale"
+        "RenderScale",
+        "RenderMesh"
     ],
     "defaults": {
         "AttackCooldown": {},
         "AvoidanceParams": {},
         "CombatClips": {},
-        "Facing": {},
+        "Facing": {
+            "yaw": 180.0
+        },
         "Health": {},
         "LocomotionClips": {},
         "MoveSpeed": {},
@@ -30,12 +33,16 @@
         "Path": {},
         "Position": {},
         "Radius": {},
+        "RenderMesh": {},
+        "RenderScale": {
+            "uniform": 3
+        },
         "Separation": {},
         "Team": {},
         "Velocity": {}
     },
     "name": "boss",
     "visual": {
-        "model": "assets/demon0/Warrok W Kurniawan.smodel"
+        "model": "assets/boss/scene.smodel"
     }
 }
