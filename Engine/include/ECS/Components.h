@@ -141,6 +141,11 @@ namespace Engine::ECS
     struct RenderModel
     {
         ModelHandle handle;
+
+        // Optional orientation fix for models whose authored forward axis
+        // doesn't match the engine convention (Facing yaw=0 means +Z).
+        // Applied by RenderTransformUpdateSystem as an additive yaw.
+        float yawOffset = 0.0f;
     };
 
     // Data-driven clip mapping for generic locomotion controllers.
