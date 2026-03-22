@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ECS/SystemFormat.h"
+#include "utils/JobSystem.h"
 #include <glm/glm.hpp>
 #include <algorithm>
 #include <cmath>
@@ -8,6 +9,11 @@
 class RenderBoundsUpdateSystem : public Engine::ECS::SystemBase
 {
 public:
+    // =====================
+    // TUNING CONSTANTS
+    // =====================
+    static constexpr uint32_t PARALLEL_DIRTY_ROW_THRESHOLD = 100;
+
     RenderBoundsUpdateSystem()
     {
         // Requires render transform (world matrix) and render bounds (sphere data)
@@ -59,10 +65,10 @@ public:
             if (dirtyRows.empty())
                 continue;
 
-            for (uint32_t row : dirtyRows)
+            auto processRow = [&](uint32_t row)
             {
                 if (row >= n)
-                    continue;
+                    return;
 
                 auto &bounds = renderBounds[row];
                 const auto &transform = renderTransforms[row].world;
@@ -82,6 +88,17 @@ public:
                 bounds.worldRadius = bounds.localRadius * maxScale;
                 bounds.boundsVersion++;
                 ecs.markDirty(m_renderBoundsId, archetypeId, row);
+            };
+
+            if (ecs.jobSystem && dirtyRows.size() >= PARALLEL_DIRTY_ROW_THRESHOLD)
+            {
+                ecs.jobSystem->parallelFor(static_cast<uint32_t>(dirtyRows.size()), [&](uint32_t /*worker*/, uint32_t item)
+                                           { processRow(dirtyRows[item]); });
+            }
+            else
+            {
+                for (uint32_t row : dirtyRows)
+                    processRow(row);
             }
         }
     }

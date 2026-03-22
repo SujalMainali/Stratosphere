@@ -1,20 +1,18 @@
 {
     "components": [
         "Position",
-        "Obstacle",
-        "ObstacleRadius",
         "Radius",
         "RenderMesh",
         "RenderScale",
         "Separation"
     ],
     "defaults": {
-        "Obstacle": {},
-        "ObstacleRadius": {},
         "Position": {},
         "Radius": {},
         "RenderMesh": {},
-        "RenderScale": {},
+        "RenderScale": {
+            "uniform": 11
+        },
         "Separation": {}
     },
     "name": "grass",

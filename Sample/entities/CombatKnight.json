@@ -49,7 +49,7 @@
             "yaw": 0.0
         },
         "Health": {
-            "value": 140.0
+            "value": 200.0
         },
         "LocomotionClips": {
             "idleClip": 65,
@@ -57,7 +57,7 @@
             "walkClip": 112
         },
         "MoveSpeed": {
-            "value": 5.0
+            "value": 20.0
         },
         "MoveTarget": {
             "active": 0,

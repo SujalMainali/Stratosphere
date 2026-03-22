@@ -1,7 +1,5 @@
 {
     "components": [
-        "RenderScale",
-        "RenderMesh",
         "Position",
         "Velocity",
         "Health",
@@ -15,23 +13,29 @@
         "Team",
         "AttackCooldown",
         "LocomotionClips",
-        "CombatClips"
+        "CombatClips",
+        "RenderMesh",
+        "RenderScale"
     ],
     "defaults": {
         "AttackCooldown": {},
         "AvoidanceParams": {},
         "CombatClips": {},
         "Facing": {},
-        "Health": {},
+        "Health": {
+            "value": 200.0
+        },
         "LocomotionClips": {},
-        "MoveSpeed": {},
+        "MoveSpeed": {
+            "value": 20.0
+        },
         "MoveTarget": {},
         "Path": {},
         "Position": {},
         "Radius": {},
         "RenderMesh": {},
         "RenderScale": {
-            "uniform": 2
+            "uniform": 3
         },
         "Separation": {},
         "Team": {},

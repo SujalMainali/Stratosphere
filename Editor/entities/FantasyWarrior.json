@@ -22,9 +22,13 @@
         "AvoidanceParams": {},
         "CombatClips": {},
         "Facing": {},
-        "Health": {},
+        "Health": {
+            "value": 200.0
+        },
         "LocomotionClips": {},
-        "MoveSpeed": {},
+        "MoveSpeed": {
+            "value": 20.0
+        },
         "MoveTarget": {},
         "Path": {},
         "Position": {},

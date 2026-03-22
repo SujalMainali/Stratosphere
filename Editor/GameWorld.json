@@ -586,28 +586,48 @@
                 "x": -361.0,
                 "z": -80.0
             }
+        },
+        {
+            "end": {
+                "x": -248.0,
+                "z": 196.0
+            },
+            "gaps": [],
+            "prefab": "smallfence",
+            "spacing": 10.0,
+            "start": {
+                "x": -248.0,
+                "z": 96.0
+            }
+        },
+        {
+            "end": {
+                "x": -124.0,
+                "z": 262.0
+            },
+            "gaps": [],
+            "prefab": "smallfence",
+            "spacing": 10.0,
+            "start": {
+                "x": -124.0,
+                "z": 162.0
+            }
+        },
+        {
+            "end": {
+                "x": -300.0,
+                "z": 381.0
+            },
+            "gaps": [],
+            "prefab": "smallfence",
+            "spacing": 10.0,
+            "start": {
+                "x": -300.0,
+                "z": 281.0
+            }
         }
     ],
     "spawnGroups": [
-        {
-            "anchor": "",
-            "count": 30,
-            "facingYawDeg": 0.0,
-            "formation": {
-                "columns": 5,
-                "jitter_m": 0.20000000298023224,
-                "kind": "grid",
-                "radius_m": 5.0,
-                "spacing_m": 5.0
-            },
-            "id": "Warrior",
-            "offset": {
-                "x": 71.0,
-                "z": -353.0
-            },
-            "team": 1,
-            "unitType": "Warrior"
-        },
         {
             "anchor": "",
             "count": 1,
@@ -634,7 +654,7 @@
                 "columns": 5,
                 "jitter_m": 0.20000000298023224,
                 "kind": "grid",
-                "spacing_m": 5.0
+                "spacing_m": 10.0
             },
             "id": "CombatKnight",
             "offset": {
@@ -647,18 +667,18 @@
         {
             "anchor": "",
             "count": 20,
-            "facingYawDeg": 360.0,
+            "facingYawDeg": 120.0,
             "formation": {
                 "columns": 5,
                 "jitter_m": 0.20000000298023224,
                 "kind": "grid",
                 "radius_m": 5.0,
-                "spacing_m": 8.0
+                "spacing_m": 10.0
             },
             "id": "FantasyWarrior",
             "offset": {
-                "x": 0.0,
-                "z": 0.0
+                "x": 10.0,
+                "z": -12.0
             },
             "team": 0,
             "unitType": "FantasyWarrior"
@@ -684,18 +704,18 @@
         },
         {
             "anchor": "",
-            "count": 650,
+            "count": 4,
             "facingYawDeg": 0.0,
             "formation": {
-                "columns": 25,
+                "columns": 2,
                 "jitter_m": 0.20000000298023224,
                 "kind": "grid",
-                "spacing_m": 5.0
+                "spacing_m": 50.0
             },
             "id": "grass",
             "offset": {
-                "x": 390.0,
-                "z": 380.0
+                "x": 380.0,
+                "z": 385.0
             },
             "team": 0,
             "unitType": "grass"
@@ -703,20 +723,38 @@
         {
             "anchor": "",
             "count": 1,
+            "facingYawDeg": 200.0,
+            "formation": {
+                "columns": 0,
+                "jitter_m": 0.20000000298023224,
+                "kind": "grid",
+                "spacing_m": 10.0
+            },
+            "id": "king",
+            "offset": {
+                "x": -360.0,
+                "z": 440.0
+            },
+            "team": 1,
+            "unitType": "king"
+        },
+        {
+            "anchor": "",
+            "count": 20,
             "facingYawDeg": 0.0,
             "formation": {
                 "columns": 5,
                 "jitter_m": 0.20000000298023224,
                 "kind": "grid",
-                "spacing_m": 5.0
+                "spacing_m": 10.0
             },
-            "id": "demon",
+            "id": "Warrior",
             "offset": {
-                "x": 0.0,
-                "z": 0.0
+                "x": 71.0,
+                "z": -353.0
             },
             "team": 1,
-            "unitType": "demon"
+            "unitType": "Warrior"
         }
     ]
 }

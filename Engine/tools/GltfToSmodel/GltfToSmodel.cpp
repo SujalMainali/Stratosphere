@@ -3,11 +3,13 @@
 #include <assimp/postprocess.h>
 
 #include <cstdint>
+#include <cstdint>
 #include <vector>
 #include <string>
 #include <unordered_map>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <filesystem>
 #include <cstring>
 #include <algorithm>

@@ -22,12 +22,25 @@
     "defaults": {
         "AttackCooldown": {},
         "AvoidanceParams": {},
-        "CombatClips": {},
+        "CombatClips": {
+            "attackEnd": 5,
+            "attackStart": 2,
+            "damageEnd": 6,
+            "damageStart": 7,
+            "deathEnd": 8,
+            "deathStart": 9
+        },
         "Facing": {
             "yaw": 180.0
         },
-        "Health": {},
-        "LocomotionClips": {},
+        "Health": {
+            "value": 3000.0
+        },
+        "LocomotionClips": {
+            "idleClip": 4,
+            "runClip": 0,
+            "walkClip": 1
+        },
         "MoveSpeed": {},
         "MoveTarget": {},
         "Path": {},

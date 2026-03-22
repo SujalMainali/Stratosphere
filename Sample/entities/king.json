@@ -31,14 +31,14 @@
         "Radius": {},
         "RenderMesh": {},
         "RenderScale": {
-            "uniform": 4
+            "uniform": 8
         },
         "Separation": {},
         "Team": {},
         "Velocity": {}
     },
-    "name": "demon",
+    "name": "king",
     "visual": {
-        "model": "assets/demon/scene.smodel"
+        "model": "assets/king/scene.smodel"
     }
 }
