@@ -14,7 +14,7 @@
         },
         "Obstacle": {},
         "ObstacleRadius": {
-            "r": 2.0
+            "r": 30.0
         },
         "Position": {},
         "RenderMesh": {},

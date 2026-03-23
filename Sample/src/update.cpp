@@ -25,6 +25,12 @@ namespace Sample
                 }
                 m_pathfinding.buildMasks(registry);
                 m_movement.buildMasks(registry);
+                {
+                        MovementSystem::Config cfg;
+                        cfg.enforceNavGridCollision = true;
+                        m_movement.setNavGrid(&m_navGrid);
+                        m_movement.setConfig(cfg);
+                }
                 m_renderTransform.buildMasks(registry);
                 m_renderBoundsUpdate.buildMasks(registry);
                 m_visibilityCulling.buildMasks(registry);
@@ -41,7 +47,9 @@ namespace Sample
                 m_renderModel.setVisibleBuckets(&m_visibleRenderGather.buckets());
 
                 // Initialize NavGrid (cover map area)
-                m_navGrid.rebuild(2.0f, -400.0f, -400.0f, 400.0f, 400.0f);
+                // BattleConfig.json places obstacles/units around +/-500.
+                // Add padding so clamping in pathfinding doesn't distort routes near the edges.
+                m_navGrid.rebuild(2.0f, -600.0f, -600.0f, 600.0f, 600.0f);
 
                 m_initialized = true;
         }

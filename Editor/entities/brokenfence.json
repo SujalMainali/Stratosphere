@@ -11,7 +11,9 @@
     "defaults": {
         "Facing": {},
         "Obstacle": {},
-        "ObstacleRadius": {},
+        "ObstacleRadius": {
+            "r": 30.0
+        },
         "Position": {},
         "RenderMesh": {},
         "RenderScale": {

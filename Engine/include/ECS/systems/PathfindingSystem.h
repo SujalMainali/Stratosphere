@@ -322,13 +322,10 @@ private:
             return;
         }
 
-        if (m_grid->lineCheckGrid(startX, startZ, targetX, targetZ))
-        {
-            outPath.valid = true;
-            outPath.count = 0;
-            outPath.current = 0;
-            return;
-        }
+        // NOTE: lineCheckGrid shortcut removed — it produced count=0 (direct
+        // steering) which ignored entity physical radius and caused units to
+        // walk into obstacles before correcting.  A* always runs now; path
+        // smoothing still uses lineCheckGrid to optimize waypoints afterward.
 
         ensureGridBuffers(s);
         ++s.currentGen;
