@@ -207,11 +207,27 @@ public:
 
                     const auto* nStore = ecs.stores.get(nStoreId);
                     if (!nStore) return;
-                    if (!nStore->hasPosition() || !nStore->hasRadius()) return;
                     if (nRow >= nStore->size()) return;
 
+                    if (!nStore->hasPosition()) return;
+
+                    // Obstacles typically use ObstacleRadius (not Radius). Treat ObstacleRadius as the
+                    // neighbor's radius so movers will avoid obstacles without requiring data changes.
+                    float neighborRadius = 0.0f;
+                    if (nStore->hasRadius())
+                    {
+                        neighborRadius = nStore->radii()[nRow].r;
+                    }
+                    else if (nStore->hasObstacleRadius())
+                    {
+                        neighborRadius = nStore->obstacleRadii()[nRow].r;
+                    }
+                    else
+                    {
+                        return;
+                    }
+
                     const auto& np = nStore->positions()[nRow];
-                    const auto& nr = nStore->radii()[nRow];
 
                     const bool nHasSep = nStore->hasSeparation();
                     const bool nHasTeam = nStore->hasTeam();
@@ -235,7 +251,7 @@ public:
                             desiredSep = 0.0f;
                     }
 
-                    const float desiredDist = (r.r + nr.r) + desiredSep;
+                    const float desiredDist = (r.r + neighborRadius) + desiredSep;
                     const float interactDist = desiredDist + interactSlack;
 
                     float dx = p.x - np.x;

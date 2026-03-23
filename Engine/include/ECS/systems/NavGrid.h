@@ -134,12 +134,25 @@ public:
             if (gx0 == gx1 && gz0 == gz1)
                 break;
             int e2 = 2 * err;
-            if (e2 > -dz)
+            bool stepX = (e2 > -dz);
+            bool stepZ = (e2 < dx);
+
+            // Diagonal step: verify both cardinal corner cells are walkable.
+            // Without this, the line slips between diagonally-adjacent blocked
+            // cells and falsely reports "clear" — the same check A* already does
+            // in its neighbor expansion (blocked[idx(cx,nz)] || blocked[idx(nx,cz)]).
+            if (stepX && stepZ)
+            {
+                if (!isWalkable(gx0 + sx, gz0) || !isWalkable(gx0, gz0 + sz))
+                    return false;
+            }
+
+            if (stepX)
             {
                 err -= dz;
                 gx0 += sx;
             }
-            if (e2 < dx)
+            if (stepZ)
             {
                 err += dx;
                 gz0 += sz;

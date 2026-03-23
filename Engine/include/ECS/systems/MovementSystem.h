@@ -9,6 +9,7 @@
 
 #include "ECS/SystemFormat.h"
 #include "ECS/Components.h"
+#include "ECS/systems/NavGrid.h"
 #include "utils/JobSystem.h"
 
 #include <cmath>
@@ -24,6 +25,13 @@ public:
     static constexpr float MAX_SPEED = 25.0f; // m/s, sanity cap
     static constexpr float MAX_STEP = 5.0f;   // m/frame, teleport guard
 
+    struct Config
+    {
+        // If enabled and a NavGrid is provided, movement will not step through blocked cells.
+        // When blocked, velocity is zeroed and MoveTarget is marked dirty to trigger replanning.
+        bool enforceNavGridCollision = false;
+    };
+
     MovementSystem()
     {
         setRequiredNames({"Position", "Velocity"});
@@ -32,11 +40,15 @@ public:
 
     const char *name() const override { return "MovementSystem"; }
 
+    void setNavGrid(const NavGrid *grid) { m_navGrid = grid; }
+    void setConfig(const Config &cfg) { m_cfg = cfg; }
+
     void buildMasks(Engine::ECS::ComponentRegistry &registry) override
     {
         Engine::ECS::SystemBase::buildMasks(registry);
         m_positionId = registry.ensureId("Position");
         m_velocityId = registry.ensureId("Velocity");
+        m_moveTargetId = registry.ensureId("MoveTarget");
         m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     }
 
@@ -128,9 +140,28 @@ public:
                 const float oldY = pos.y;
                 const float oldZ = pos.z;
 
-                pos.x += dx;
-                pos.y += dy;
-                pos.z += dz;
+                const float newX = oldX + dx;
+                const float newZ = oldZ + dz;
+
+                if (m_cfg.enforceNavGridCollision && m_navGrid)
+                {
+                    // Prevent moving through blocked cells. This is the "hard constraint" that makes
+                    // obstacles reliably blocking even if steering/avoidance pushes into them.
+                    if (!m_navGrid->lineCheck(oldX, oldZ, newX, newZ))
+                    {
+                        vel.x = vel.y = vel.z = 0.0f;
+                        ecs.markDirty(m_velocityId, archetypeId, i);
+
+                        // Trigger replanning if this mover has a goal.
+                        if (store.hasMoveTarget())
+                            ecs.markDirty(m_moveTargetId, archetypeId, i);
+                        return;
+                    }
+                }
+
+                pos.x = newX;
+                pos.y = oldY + dy;
+                pos.z = newZ;
 
                 if (!finite3(pos.x, pos.y, pos.z))
                 {
@@ -164,7 +195,10 @@ public:
     }
 
 private:
+    Config m_cfg{};
+    const NavGrid *m_navGrid = nullptr;
     Engine::ECS::QueryId m_queryId = Engine::ECS::QueryManager::InvalidQuery;
     uint32_t m_positionId = Engine::ECS::ComponentRegistry::InvalidID;
     uint32_t m_velocityId = Engine::ECS::ComponentRegistry::InvalidID;
+    uint32_t m_moveTargetId = Engine::ECS::ComponentRegistry::InvalidID;
 };
